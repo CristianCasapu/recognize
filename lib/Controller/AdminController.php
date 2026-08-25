@@ -208,7 +208,7 @@ final class AdminController extends Controller {
 		try {
 			exec($this->settingsService->getSetting('node_binary') . ' --version' . ' 2>&1', $output, $returnCode);
 		} catch (\Throwable $e) {
-			return new JSONResponse(['nodejs' => null]);
+			return new JSONResponse(['nodejs' => false]);
 		}
 
 		if ($returnCode !== 0) {
@@ -223,14 +223,14 @@ final class AdminController extends Controller {
 		try {
 			exec($this->settingsService->getSetting('ffmpeg_binary') . ' -version' . ' 2>&1', $output, $returnCode);
 		} catch (\Throwable $e) {
-			return new JSONResponse(['ffmpeg' => null]);
+			return new JSONResponse(['ffmpeg' => false]);
 		}
 
 		if ($returnCode !== 0) {
 			return new JSONResponse(['ffmpeg' => false]);
 		}
 
-		if (preg_match('/version (.*?) /', trim($output[0]), $matches) !== 1) {
+		if (!isset($output[0]) || preg_match('/version (.*?) /', trim($output[0]), $matches) !== 1) {
 			return new JSONResponse(['ffmpeg' => false]);
 		}
 		$version = $matches[1];

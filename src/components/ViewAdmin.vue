@@ -600,14 +600,26 @@ export default {
 			this.musl = musl
 		},
 		async getNodejsStatus() {
-			const resp = await axios.get(generateUrl('/apps/recognize/admin/nodejs'))
-			const { nodejs } = resp.data
-			this.nodejs = nodejs
+			try {
+				const resp = await axios.get(generateUrl('/apps/recognize/admin/nodejs'))
+				const { nodejs } = resp.data
+				// Anything but a version string means we could not determine the version
+				this.nodejs = typeof nodejs === 'string' && nodejs !== '' ? nodejs : false
+			} catch (e) {
+				console.error(e)
+				this.nodejs = false
+			}
 		},
 		async getFfmpegStatus() {
-			const resp = await axios.get(generateUrl('/apps/recognize/admin/ffmpeg'))
-			const { ffmpeg } = resp.data
-			this.ffmpeg = ffmpeg
+			try {
+				const resp = await axios.get(generateUrl('/apps/recognize/admin/ffmpeg'))
+				const { ffmpeg } = resp.data
+				// Anything but a version string means we could not determine the version
+				this.ffmpeg = typeof ffmpeg === 'string' && ffmpeg !== '' ? ffmpeg : false
+			} catch (e) {
+				console.error(e)
+				this.ffmpeg = false
+			}
 		},
 		async getLibtensorflowStatus() {
 			const resp = await axios.get(generateUrl('/apps/recognize/admin/libtensorflow'))
