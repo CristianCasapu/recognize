@@ -36,7 +36,7 @@ final class ClusterFacesJob extends QueuedJob {
 		$userId = (string)$argument['userId'];
 		try {
 			$iniValue = ini_get('memory_limit');
-			if ($iniValue === false) {
+			if ($iniValue === false || $iniValue === '') {
 				$batchSize = 10_000;
 			} else {
 				$memoryBytes = ini_parse_quantity($iniValue);
