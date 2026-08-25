@@ -191,7 +191,7 @@ final class FsActionService {
 			$this->faceDetectionMapper->removeDetectionsForFileFromUsersNotInList($fileInfo['fileid'], $userIds);
 		}
 		foreach (array_keys($userIdsToScheduleClustering) as $userId) {
-			$this->jobList->add(ClusterFacesJob::class, ['userId' => $userId]);
+			$this->jobList->add(ClusterFacesJob::class, ['userId' => (string)$userId]);
 		}
 	}
 
