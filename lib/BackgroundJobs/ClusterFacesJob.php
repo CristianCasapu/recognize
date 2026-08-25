@@ -19,7 +19,6 @@ final class ClusterFacesJob extends QueuedJob {
 	private FaceClusterAnalyzer $clusterAnalyzer;
 	private IJobList $jobList;
 	private LoggerInterface $logger;
-	public const BATCH_SIZE = 10000;
 	private SettingsService $settingsService;
 
 	public function __construct(ITimeFactory $time, Logger $logger, IJobList $jobList, FaceClusterAnalyzer $clusterAnalyzer, SettingsService $settingsService) {
@@ -34,9 +33,20 @@ final class ClusterFacesJob extends QueuedJob {
 	 * @param array{storageId: int, rootId: int, userId: string} $argument
 	 */
 	protected function run($argument): void {
-		$userId = $argument['userId'];
+		$userId = (string)$argument['userId'];
 		try {
-			$this->clusterAnalyzer->calculateClusters($userId, self::BATCH_SIZE);
+			$iniValue = ini_get('memory_limit');
+			if ($iniValue === false) {
+				$batchSize = 10_000;
+			} else {
+				$memoryBytes = ini_parse_quantity($iniValue);
+				if ($memoryBytes === -1) {
+					$batchSize = 10_000;
+				} else {
+					$batchSize = (int)($memoryBytes * 5_000 / 120_000_0000);
+				}
+			}
+			$this->clusterAnalyzer->calculateClusters($userId, $batchSize);
 		} catch (\Throwable $e) {
 			$this->settingsService->setSetting('clusterFaces.status', 'false');
 			$this->logger->error('Failed to calculate face clusters', ['exception' => $e]);

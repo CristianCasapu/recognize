@@ -23,6 +23,8 @@ final class FaceClusterAnalyzer {
 	public const DIMENSIONS = 128;
 	public const MAX_OVERLAP_NEW_CLUSTER = 0.1;
 	public const MIN_OVERLAP_EXISTING_CLUSTER = 0.5;
+	public const REFERENCE_SAMPLE_BUDGET_SHARE = 0.5;
+	public const MIN_REFERENCE_SAMPLE_SIZE = 2;
 
 	private FaceDetectionMapper $faceDetections;
 	private FaceClusterMapper $faceClusters;
@@ -57,15 +59,25 @@ final class FaceClusterAnalyzer {
 		$existingClusters = $this->faceClusters->findByUserId($userId);
 		/** @var array<int,int> $maxVotesByCluster */
 		$maxVotesByCluster = [];
+		$referenceSampleSize = $this->getReferenceSampleSize(count($existingClusters), $batchSize);
 		foreach ($existingClusters as $existingCluster) {
-			$sampled = $this->faceDetections->findClusterSample($existingCluster->getId(), $this->getReferenceSampleSize(count($existingClusters)));
+			$sampled = $this->faceDetections->findClusterSample($existingCluster->getId(), $referenceSampleSize);
 			$sampledDetections = array_merge($sampledDetections, $sampled);
 			$maxVotesByCluster[$existingCluster->getId()] = count($sampled);
 		}
 
+		// Every existing cluster must be represented, otherwise its faces would be clustered
+		// into a duplicate cluster. If that alone exceeds the batch budget, we cannot honour it.
+		if ($batchSize > 0 && count($sampledDetections) > $batchSize) {
+			$this->logger->warning('ClusterDebug: The batch size of ' . $batchSize . ' detections is too small for the ' . count($existingClusters) . ' existing clusters of user ' . $userId . '; loading ' . count($sampledDetections) . ' reference detections instead. Consider raising the PHP memory limit.');
+		}
+
 		if ($batchSize > 0) {
 			$rejectedDetections = $this->faceDetections->sampleRejectedDetectionsByUserId($userId, $this->getRejectSampleSize($batchSize), self::MIN_DETECTION_SIZE, self::MIN_DETECTION_SIZE);
-			$requestedFreshDetectionCount = max($batchSize - count($rejectedDetections) - count($sampledDetections), 500);
+			// Guarantee forward progress even when samples and rejects have eaten the whole
+			// budget, but keep the floor relative so a small batch size stays a small batch.
+			$freshDetectionFloor = min(500, (int)round($batchSize * (1.0 - self::REFERENCE_SAMPLE_BUDGET_SHARE)));
+			$requestedFreshDetectionCount = max($batchSize - count($rejectedDetections) - count($sampledDetections), $freshDetectionFloor);
 			$freshDetections = $this->faceDetections->findUnclusteredByUserId($userId, $requestedFreshDetectionCount, self::MIN_DETECTION_SIZE, self::MIN_DETECTION_SIZE);
 		} else {
 			$freshDetections = $this->faceDetections->findUnclusteredByUserId($userId, 0, self::MIN_DETECTION_SIZE, self::MIN_DETECTION_SIZE);
@@ -266,12 +278,24 @@ final class FaceClusterAnalyzer {
 
 	/**
 	 * Grows to ~5000 detections for ~200-800 clusters (detections per cluster drop exponentially)
-	 * and then grows linearly with 5 detections per cluster
+	 * and then grows linearly with 5 detections per cluster.
+	 *
+	 * Capped so that all reference samples together stay within their share of the batch
+	 * budget: without that cap the ~5000+ sampled detections dwarf a batch size derived
+	 * from a low memory limit, and the budget would bound nothing.
 	 * @param int $numberClusters
+	 * @param int $batchSize 0 for an unbounded run
 	 * @return int
 	 */
-	private function getReferenceSampleSize(int $numberClusters) : int {
-		return (int)round(75.0 * 2.0 ** (-0.007 * $numberClusters) + 5.0);
+	private function getReferenceSampleSize(int $numberClusters, int $batchSize = 0) : int {
+		$sampleSize = (int)round(75.0 * 2.0 ** (-0.007 * $numberClusters) + 5.0);
+
+		if ($batchSize <= 0 || $numberClusters === 0) {
+			return $sampleSize;
+		}
+
+		$sizePerClusterBudget = (int)floor($batchSize * self::REFERENCE_SAMPLE_BUDGET_SHARE / $numberClusters);
+		return max(self::MIN_REFERENCE_SAMPLE_SIZE, min($sampleSize, $sizePerClusterBudget));
 	}
 
 	private function getRejectSampleSize(int $batchSize): int {

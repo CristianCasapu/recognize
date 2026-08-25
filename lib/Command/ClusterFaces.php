@@ -41,7 +41,7 @@ final class ClusterFaces extends Command {
 	protected function configure() {
 		$this->setName('recognize:cluster-faces')
 			->setDescription('Cluster detected faces per user (Memory usage will grow with O(n²): n=2000: 450MB, n=4000: 700MB, n=5000: 1200MB)')
-			->addOption('batch-size', 'b', InputOption::VALUE_REQUIRED, 'The number of face detections to cluster in one go. 0 for no limit.', 0);
+			->addOption('batch-size', 'b', InputOption::VALUE_REQUIRED, 'The number of face detections to cluster in one go. 0 for no limit.', 10_000);
 	}
 
 	/**
