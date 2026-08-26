@@ -39,7 +39,7 @@ jobs:
         movinet-enabled: ['true']
         include:
           # test pure-js once
-          - server-versions: master
+          - server-versions: stable34
             databases: sqlite
             php-versions: 8.2
             pure-js-mode: true
