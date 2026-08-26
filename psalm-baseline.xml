@@ -13,6 +13,11 @@
       <code><![CDATA[$jobClass === static::class]]></code>
     </TypeDoesNotContainType>
   </file>
+  <file src="lib/BackgroundJobs/ClusterFacesJob.php">
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(string)$argument['userId']]]></code>
+    </RedundantCastGivenDocblockType>
+  </file>
   <file src="lib/Classifiers/Classifier.php">
     <MixedAssignment>
       <code><![CDATA[$results]]></code>
@@ -960,6 +965,9 @@
     </PossiblyFalseArgument>
   </file>
   <file src="lib/Service/FsActionService.php">
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(string)$userId]]></code>
+    </RedundantCastGivenDocblockType>
     <UndefinedClass>
       <code><![CDATA[$e]]></code>
       <code><![CDATA[NoUserException]]></code>
