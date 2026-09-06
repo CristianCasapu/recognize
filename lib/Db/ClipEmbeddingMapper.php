@@ -105,16 +105,25 @@ final class ClipEmbeddingMapper extends QBMapper {
 	 * @throws \OCP\DB\Exception
 	 */
 	public function findPhashes(): array {
+		return array_map(static fn (array $row) => $row['phash'], $this->findPhashesWithMtime());
+	}
+
+	/**
+	 * @return array<int, array{phash:string, mtime:int}> file id => hash and file modification time
+	 * @throws \OCP\DB\Exception
+	 */
+	public function findPhashesWithMtime(): array {
 		$qb = $this->db->getQueryBuilder();
-		$qb->select('file_id', 'phash')
-			->from($this->getTableName())
-			->where($qb->expr()->isNotNull('phash'));
+		$qb->select('e.file_id', 'e.phash', 'f.mtime')
+			->from($this->getTableName(), 'e')
+			->innerJoin('e', 'filecache', 'f', $qb->expr()->eq('f.fileid', 'e.file_id'))
+			->where($qb->expr()->isNotNull('e.phash'));
 		$result = $qb->executeQuery();
-		$hashes = [];
+		$rows = [];
 		while ($row = $result->fetch()) {
-			$hashes[(int)$row['file_id']] = (string)$row['phash'];
+			$rows[(int)$row['file_id']] = ['phash' => (string)$row['phash'], 'mtime' => (int)$row['mtime']];
 		}
 		$result->closeCursor();
-		return $hashes;
+		return $rows;
 	}
 }

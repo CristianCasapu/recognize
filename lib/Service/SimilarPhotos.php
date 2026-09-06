@@ -20,8 +20,10 @@ use OCP\ICacheFactory;
  */
 final class SimilarPhotos {
 	public const HASH_STRICT = 6;
-	public const HASH_LOOSE = 14;
-	public const CLIP_MIN = 0.93;
+	public const HASH_LOOSE = 12;
+	public const CLIP_MIN = 0.95;
+	/** near-duplicates (bursts) must have been taken within this many seconds of each other */
+	public const LOOSE_MAX_TIME_DIFF = 24 * 3600;
 	public const CACHE_TTL = 6 * 3600;
 	public const CACHE_KEY = 'groups';
 
@@ -46,29 +48,30 @@ final class SimilarPhotos {
 			}
 		}
 		$start = microtime(true);
-		$hashes = $this->embeddings->findPhashes();
-		$fileIds = array_keys($hashes);
+		$rows = $this->embeddings->findPhashesWithMtime();
+		ksort($rows);
 		$ints = [];
-		foreach ($hashes as $fileId => $hex) {
+		$mtimes = [];
+		foreach ($rows as $fileId => $row) {
+			$hex = $row['phash'];
 			if (strlen($hex) !== 16 || !ctype_xdigit($hex)) {
 				continue;
 			}
 			$ints[$fileId] = unpack('J', hex2bin($hex))[1];
+			$mtimes[$fileId] = $row['mtime'];
 		}
 		$fileIds = array_keys($ints);
 		$n = count($fileIds);
 		$values = array_values($ints);
 		$table = self::popcountTable();
 
-		// union-find
-		$parent = array_combine($fileIds, $fileIds);
-		$find = static function (int $x) use (&$parent, &$find): int {
-			while ($parent[$x] !== $x) {
-				$parent[$x] = $parent[$parent[$x]];
-				$x = $parent[$x];
-			}
-			return $x;
-		};
+		// Every file is compared with the *representative* (first member) of each existing group and joins
+		// the first one that matches; comparing with any member would chain a whole photo series
+		// (A~B, B~C, C~D …) into one group although A and D look nothing alike.
+		/** @var list<int> $representatives index into $fileIds */
+		$representatives = [];
+		/** @var array<int, list<int>> $members representative index => file ids */
+		$members = [];
 		$vectors = [];
 		$vector = function (int $fileId) use (&$vectors): ?array {
 			if (!array_key_exists($fileId, $vectors)) {
@@ -79,35 +82,38 @@ final class SimilarPhotos {
 		};
 
 		$pairs = 0;
-		for ($i = 0; $i < $n; $i++) {
-			$a = $values[$i];
-			for ($j = $i + 1; $j < $n; $j++) {
-				// Hamming distance of the two 64-bit hashes with a 16-bit lookup table (hot loop: ~n²/2 iterations)
-				$x = $a ^ $values[$j];
+		for ($j = 0; $j < $n; $j++) {
+			$b = $values[$j];
+			$joined = false;
+			foreach ($representatives as $i) {
+				// Hamming distance of the two 64-bit hashes with a 16-bit lookup table (hot loop)
+				$x = $values[$i] ^ $b;
 				$distance = $table[$x & 0xffff] + $table[($x >> 16) & 0xffff] + $table[($x >> 32) & 0xffff] + $table[($x >> 48) & 0xffff];
 				if ($distance > self::HASH_LOOSE) {
 					continue;
 				}
 				if ($distance > self::HASH_STRICT) {
+					// near-duplicate: same shooting session and (almost) identical content for CLIP
+					if (abs($mtimes[$fileIds[$i]] - $mtimes[$fileIds[$j]]) > self::LOOSE_MAX_TIME_DIFF) {
+						continue;
+					}
 					$va = $vector($fileIds[$i]);
 					$vb = $vector($fileIds[$j]);
 					if ($va === null || $vb === null || self::dot($va, $vb) < self::CLIP_MIN) {
 						continue;
 					}
 				}
-				$ra = $find($fileIds[$i]);
-				$rb = $find($fileIds[$j]);
-				if ($ra !== $rb) {
-					$parent[$ra] = $rb;
-					$pairs++;
-				}
+				$members[$i][] = $fileIds[$j];
+				$joined = true;
+				$pairs++;
+				break;
+			}
+			if (!$joined) {
+				$representatives[] = $j;
+				$members[$j] = [$fileIds[$j]];
 			}
 		}
 
-		$members = [];
-		foreach ($fileIds as $fileId) {
-			$members[$find($fileId)][] = $fileId;
-		}
 		$groups = [];
 		foreach ($members as $files) {
 			if (count($files) < 2) {
