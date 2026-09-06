@@ -31,6 +31,7 @@ final class InstallInsightfaceJob extends QueuedJob {
 		private FaceBackend $backend,
 		private FaceBackendSwitcher $switcher,
 		private FaceDetectionMapper $faceDetections,
+		private \OCP\BackgroundJob\IJobList $jobList,
 	) {
 		parent::__construct($time);
 		$this->setAllowParallelRuns(false);
@@ -54,6 +55,11 @@ final class InstallInsightfaceJob extends QueuedJob {
 				&& $this->faceDetections->countAll() === 0) {
 				$this->switcher->switchTo(FaceBackend::INSIGHTFACE);
 				$log('No faces detected yet: switched the face backend to InsightFace');
+			}
+			// Zero-touch: the same environment powers natural-language search
+			if (!$this->settingsService->isSet('clip.enabled')) {
+				$this->jobList->add(InstallClipJob::class);
+				$log('Natural-language search model download scheduled');
 			}
 			$lines[] = '[' . date('c') . '] done';
 			$this->settingsService->setRawSetting(InsightfaceInstaller::LOG_SETTING, json_encode(['running' => false, 'ok' => true, 'lines' => $lines]));

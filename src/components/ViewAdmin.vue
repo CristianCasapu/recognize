@@ -253,6 +253,86 @@ occ recognize:switch-face-backend insightface</code></pre>
 				</table>
 			</template>
 		</NcSettingsSection>
+		<NcSettingsSection :name="t('recognize', 'Natural-language photo search')">
+			<p>{{ t('recognize', 'Lets people search their photos in plain language ("sunset at the sea", "birthday cake", "dog in the snow") in Memories. Every photo gets a CLIP embedding (a multilingual model that maps images and text into the same space, ~1.6 GB, runs through the same Python environment as InsightFace, on the GPU when available); the same pass computes a perceptual hash used to find near-duplicate photos.') }}</p>
+			<template v-if="settings['clip.enabled']">
+				<NcNoteCard v-if="settings['clip.status'] === true" show-alert type="success">
+					{{ t('recognize', 'Photo indexing for search is working.') }}
+				</NcNoteCard>
+				<NcNoteCard v-else-if="settings['clip.status'] === false" show-alert type="error">
+					{{ t('recognize', 'An error occurred while indexing photos for search, see "Recent errors" above.') }}
+				</NcNoteCard>
+				<NcNoteCard v-else type="warning">
+					{{ t('recognize', 'Waiting for the first indexing run.') }}
+				</NcNoteCard>
+				<NcNoteCard v-if="countQueued" type="info">
+					{{ t('recognize', 'Search index:') }} {{ countQueued.clip }} {{ t('recognize', 'Queued files') }}, {{ t('recognize', 'Last classification: ') }} {{ showDate(settings['clip.lastFile']) }}<span v-if="clipJobs">, {{ t('recognize', 'Scheduled background jobs: ') }} {{ clipJobs.scheduled }}</span><span v-if="clip">, {{ t('recognize', '{count} photos indexed', { count: clip.indexed }) }}</span>
+				</NcNoteCard>
+			</template>
+			<template v-if="clip">
+				<NcNoteCard v-if="clip.installed" show-alert type="success">
+					{{ t('recognize', 'Model {model} is installed in {dir}.', { model: clip.model, dir: clip.dir }) }}
+				</NcNoteCard>
+				<NcNoteCard v-else-if="!clip.pythonReady" type="warning">
+					{{ t('recognize', 'The Python environment is missing: install InsightFace first (section "Face model"), the search model uses the same environment.') }}
+				</NcNoteCard>
+				<NcNoteCard v-else type="warning">
+					{{ t('recognize', 'The search model {model} is not downloaded yet. Click "Download model" (background job, ~1.6 GB) or run:', { model: clip.model }) }}
+					<pre><code>occ recognize:install-clip</code></pre>
+				</NcNoteCard>
+				<div v-if="clip.install" class="recognize-output-box">
+					<strong>{{ clip.install.running ? t('recognize', 'Download in progress…') : (clip.install.ok ? t('recognize', 'Download finished') : t('recognize', 'Download failed')) }}</strong>
+					<pre class="recognize-output">{{ (clip.install.lines || []).slice(-10).join('\n') }}</pre>
+				</div>
+				<p>
+					<button v-if="!clip.installed"
+						class="button primary"
+						:disabled="clipBusy || !clip.pythonReady || (clip.install && clip.install.running) || clip.installScheduled"
+						@click="onInstallClip">
+						{{ t('recognize', 'Download model and index photos') }}
+					</button>
+				</p>
+			</template>
+			<p>
+				<NcCheckboxRadioSwitch :checked.sync="settings['clip.enabled']" type="switch" :disabled="clip && !clip.installed" @update:checked="onChange">
+					{{ t('recognize', 'Enable natural-language photo search (Memories search bar)') }}
+				</NcCheckboxRadioSwitch>
+				<NcTextField :disabled="!settings['clip.enabled']"
+					:value.sync="settings['clip.batchSize']"
+					:label-visible="true"
+					:label="t('recognize', 'The number of files to process per job run (A job will be scheduled every 5 minutes)')"
+					@update:value="onChange" />
+			</p>
+			<p>
+				<NcTextField :value.sync="settings['clip.minScore']"
+					type="number"
+					:min="0"
+					:max="1"
+					:step="0.01"
+					:label-visible="true"
+					:label="t('recognize', 'Minimum similarity for a photo to count as a match (empty = 0.17; lower shows more, less precise results)')"
+					@update:value="onChange" />
+			</p>
+			<template v-if="clip && clip.installed && settings['clip.enabled']">
+				<p>
+					<NcTextField :value.sync="clipQuery"
+						:label-visible="true"
+						:label="t('recognize', 'Try a search (e.g. \'sunset\', \'tort\', \'copil pe bicicletă\')')"
+						@keyup.enter="onClipTest" />
+					<button class="button" :disabled="clipBusy || !clipQuery" @click="onClipTest">
+						{{ t('recognize', 'Search') }}
+					</button>
+				</p>
+				<ul v-if="clipResults" class="recognize-errors">
+					<li v-if="!clipResults.length">
+						{{ t('recognize', 'No matches above the minimum similarity.') }}
+					</li>
+					<li v-for="r in clipResults" :key="r.fileid">
+						{{ r.score }} — {{ r.path }}
+					</li>
+				</ul>
+			</template>
+		</NcSettingsSection>
 		<NcSettingsSection :name="t('recognize', 'Object detection & landmark recognition')">
 			<template v-if="settings['imagenet.enabled']">
 				<NcNoteCard v-if="settings['imagenet.status'] === true" show-alert type="success">
@@ -685,9 +765,9 @@ import { generateUrl } from '@nextcloud/router'
 import { loadState } from '@nextcloud/initial-state'
 import humanizeDuration from 'humanize-duration'
 
-const SETTINGS = ['tensorflow.cores', 'tensorflow.gpu', 'tensorflow.purejs', 'tensorflow.ldLibraryPath', 'python_binary', 'imagenet.enabled', 'landmarks.enabled', 'faces.enabled', 'musicnn.enabled', 'movinet.enabled', 'node_binary', 'ffmpeg_binary', 'faces.status', 'imagenet.status', 'landmarks.status', 'movinet.status', 'musicnn.status', 'faces.lastFile', 'imagenet.lastFile', 'landmarks.lastFile', 'movinet.lastFile', 'musicnn.lastFile', 'faces.batchSize', 'imagenet.batchSize', 'landmarks.batchSize', 'movinet.batchSize', 'musicnn.batchSize', 'faces.previewDimension', 'faces.tiling', 'faces.minDetectionSize', 'faces.autoMergeThreshold', 'clusterFaces.status', 'clusterFaces.lastRun', 'nice_binary', 'nice_value', 'concurrency.enabled', 'notifications.enabled', 'forkUpdates.auto', 'faces.autoInstallInsightface']
+const SETTINGS = ['tensorflow.cores', 'tensorflow.gpu', 'tensorflow.purejs', 'tensorflow.ldLibraryPath', 'python_binary', 'imagenet.enabled', 'landmarks.enabled', 'faces.enabled', 'musicnn.enabled', 'movinet.enabled', 'node_binary', 'ffmpeg_binary', 'faces.status', 'imagenet.status', 'landmarks.status', 'movinet.status', 'musicnn.status', 'faces.lastFile', 'imagenet.lastFile', 'landmarks.lastFile', 'movinet.lastFile', 'musicnn.lastFile', 'faces.batchSize', 'imagenet.batchSize', 'landmarks.batchSize', 'movinet.batchSize', 'musicnn.batchSize', 'faces.previewDimension', 'faces.tiling', 'faces.minDetectionSize', 'faces.autoMergeThreshold', 'clusterFaces.status', 'clusterFaces.lastRun', 'nice_binary', 'nice_value', 'concurrency.enabled', 'notifications.enabled', 'forkUpdates.auto', 'faces.autoInstallInsightface', 'clip.enabled', 'clip.status', 'clip.lastFile', 'clip.batchSize', 'clip.model', 'clip.minScore']
 
-const BOOLEAN_SETTINGS = ['tensorflow.gpu', 'tensorflow.purejs', 'imagenet.enabled', 'landmarks.enabled', 'faces.enabled', 'musicnn.enabled', 'movinet.enabled', 'faces.status', 'imagenet.status', 'landmarks.status', 'movinet.status', 'musicnn.status', 'faces.lastFile', 'imagenet.lastFile', 'landmarks.lastFile', 'movinet.lastFile', 'musicnn.lastFile', 'clusterFaces.status', 'concurrency.enabled', 'faces.tiling', 'notifications.enabled', 'forkUpdates.auto', 'faces.autoInstallInsightface']
+const BOOLEAN_SETTINGS = ['tensorflow.gpu', 'tensorflow.purejs', 'imagenet.enabled', 'landmarks.enabled', 'faces.enabled', 'musicnn.enabled', 'movinet.enabled', 'faces.status', 'imagenet.status', 'landmarks.status', 'movinet.status', 'musicnn.status', 'faces.lastFile', 'imagenet.lastFile', 'landmarks.lastFile', 'movinet.lastFile', 'musicnn.lastFile', 'clusterFaces.status', 'concurrency.enabled', 'faces.tiling', 'notifications.enabled', 'forkUpdates.auto', 'faces.autoInstallInsightface', 'clip.enabled', 'clip.status', 'clip.lastFile']
 
 const MAX_RELATIVE_DATE = 1000 * 60 * 60 * 24 * 7 // one week
 
@@ -721,6 +801,7 @@ export default {
 			movinetJobs: null,
 			musicnnJobs: null,
 			clusterFacesJobs: null,
+			clipJobs: null,
 			tagsEnabled: null,
 			errors: [],
 			tensorflow: undefined,
@@ -729,6 +810,11 @@ export default {
 			forkUpdates: null,
 			updatePoll: null,
 			updateBusy: false,
+			clip: null,
+			clipPoll: null,
+			clipBusy: false,
+			clipQuery: '',
+			clipResults: null,
 			installPoll: null,
 			mergeSuggestions: null,
 			mergeResult: null,
@@ -778,6 +864,8 @@ export default {
 		this.getTensorflowStatus()
 		this.getFaceBackendStatus()
 		this.getForkUpdates()
+		this.getClipStatus()
+		this.getJobsStatus('clip')
 		this.getJobsStatus('imagenet')
 		this.getJobsStatus('faces')
 		this.getJobsStatus('landmarks')
@@ -1024,6 +1112,50 @@ export default {
 				this.error = (e.response && e.response.data && e.response.data.message) || this.t('recognize', 'Switching the face model failed')
 			} finally {
 				this.backendBusy = false
+			}
+		},
+		async getClipStatus() {
+			try {
+				const resp = await axios.get(generateUrl('/apps/recognize/admin/clip'))
+				this.clip = resp.data
+				const running = resp.data.install && resp.data.install.running
+				if (running && !this.clipPoll) {
+					this.clipPoll = setInterval(() => this.getClipStatus(), 10000)
+				} else if (!running && this.clipPoll) {
+					clearInterval(this.clipPoll)
+					this.clipPoll = null
+					this.loadValue('clip.enabled')
+				}
+			} catch (e) {
+				console.error(e)
+			}
+		},
+		async onInstallClip() {
+			this.clipBusy = true
+			try {
+				await axios.post(generateUrl('/apps/recognize/admin/clip/install'))
+				await this.getClipStatus()
+			} catch (e) {
+				console.error(e)
+				this.error = this.t('recognize', 'Could not schedule the model download')
+			} finally {
+				this.clipBusy = false
+			}
+		},
+		async onClipTest() {
+			if (!this.clipQuery) {
+				return
+			}
+			this.clipBusy = true
+			this.clipResults = null
+			try {
+				const resp = await axios.get(generateUrl('/apps/recognize/admin/clip/test'), { params: { q: this.clipQuery, limit: 8 } })
+				this.clipResults = resp.data.results
+			} catch (e) {
+				console.error(e)
+				this.error = (e.response && e.response.data && e.response.data.message) || this.t('recognize', 'Search failed')
+			} finally {
+				this.clipBusy = false
 			}
 		},
 		async getForkUpdates(refresh = false) {

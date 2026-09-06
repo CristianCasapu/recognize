@@ -9,6 +9,7 @@ namespace OCA\Recognize\Command;
 
 use OCA\Recognize\Classifiers\Audio\MusicnnClassifier;
 use OCA\Recognize\Classifiers\Classifier;
+use OCA\Recognize\Classifiers\Images\ClipClassifier;
 use OCA\Recognize\Classifiers\Images\ClusteringFaceClassifier;
 use OCA\Recognize\Classifiers\Images\ImagenetClassifier;
 use OCA\Recognize\Classifiers\Video\MovinetClassifier;
@@ -39,6 +40,7 @@ final class Classify extends Command {
 		ClusteringFaceClassifier $faces,
 		MovinetClassifier $movinet,
 		MusicnnClassifier $musicnn,
+		ClipClassifier $clip,
 		private IUserMountCache $userMountCache,
 		private SettingsService $settings,
 		private ClearBackgroundJobs $clearBackgroundJobs,
@@ -48,6 +50,7 @@ final class Classify extends Command {
 		$this->classifiers[ClusteringFaceClassifier::MODEL_NAME] = $faces;
 		$this->classifiers[MusicnnClassifier::MODEL_NAME] = $musicnn;
 		$this->classifiers[MovinetClassifier::MODEL_NAME] = $movinet;
+		$this->classifiers[ClipClassifier::MODEL_NAME] = $clip;
 		// Landmarks are currently processed out of band in a background job, because imagenet schedules it directly
 	}
 
@@ -83,6 +86,7 @@ final class Classify extends Command {
 			ImagenetClassifier::MODEL_NAME,
 			MovinetClassifier::MODEL_NAME,
 			MusicnnClassifier::MODEL_NAME,
+			ClipClassifier::MODEL_NAME,
 		], fn ($modelName) => $this->settings->getSetting($modelName . '.enabled') === 'true'));
 
 		$processedTag = $this->tagManager->getProcessedTag();
@@ -106,6 +110,7 @@ final class Classify extends Command {
 					ClusteringFaceClassifier::MODEL_NAME => [],
 					MovinetClassifier::MODEL_NAME => [],
 					MusicnnClassifier::MODEL_NAME => [],
+					ClipClassifier::MODEL_NAME => [],
 				];
 				foreach ($this->storageService->getFilesInMount($mount['storage_id'], $mount['override_root'], $models, $lastFileId) as $file) {
 					$i++;
@@ -119,6 +124,9 @@ final class Classify extends Command {
 					if ($file['image']) {
 						if (in_array(ClusteringFaceClassifier::MODEL_NAME, $models)) {
 							$queues[ClusteringFaceClassifier::MODEL_NAME][] = $queueFile;
+						}
+						if (in_array(ClipClassifier::MODEL_NAME, $models)) {
+							$queues[ClipClassifier::MODEL_NAME][] = $queueFile;
 						}
 					}
 					// if retry flag is set, skip other classifiers for tagged files

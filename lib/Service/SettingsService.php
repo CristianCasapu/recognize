@@ -11,6 +11,7 @@ namespace OCA\Recognize\Service;
 
 use OCA\Recognize\BackgroundJobs\SchedulerJob;
 use OCA\Recognize\Classifiers\Audio\MusicnnClassifier;
+use OCA\Recognize\Classifiers\Images\ClipClassifier;
 use OCA\Recognize\Classifiers\Images\ClusteringFaceClassifier;
 use OCA\Recognize\Classifiers\Images\ImagenetClassifier;
 use OCA\Recognize\Classifiers\Images\LandmarksClassifier;
@@ -79,6 +80,14 @@ final class SettingsService {
 		'faces.autoInstallInsightface' => 'true',
 		// Install new releases of the forked apps automatically (checked twice a day by the maintenance job)
 		'forkUpdates.auto' => 'false',
+		// Natural-language photo search (CLIP embeddings through the Python environment)
+		'clip.enabled' => 'false',
+		'clip.status' => 'null',
+		'clip.lastFile' => '0',
+		'clip.batchSize' => '100',
+		'clip.model' => '',
+		'clip.dir' => '',
+		'clip.minScore' => '',
 	];
 
 	/** @var array<string,string>  */
@@ -88,6 +97,7 @@ final class SettingsService {
 		'landmarks.batchSize' => '20',
 		'movinet.batchSize' => '5',
 		'musicnn.batchSize' => '20',
+		'clip.batchSize' => '20',
 	];
 	public const LAZY_SETTINGS = [
 		'tensorflow.purejs',
@@ -127,6 +137,12 @@ final class SettingsService {
 		'faces.assignThreshold',
 		'faces.autoInstallInsightface',
 		'forkUpdates.auto',
+		'clip.status',
+		'clip.lastFile',
+		'clip.batchSize',
+		'clip.model',
+		'clip.dir',
+		'clip.minScore',
 	];
 
 	private IAppConfig $config;
@@ -179,6 +195,9 @@ final class SettingsService {
 					break;
 				case MusicnnClassifier::MODEL_NAME . '.enabled':
 					$this->jobList->add(SchedulerJob::class, ['models' => [MusicnnClassifier::MODEL_NAME]]);
+					break;
+				case ClipClassifier::MODEL_NAME . '.enabled':
+					$this->jobList->add(SchedulerJob::class, ['models' => [ClipClassifier::MODEL_NAME]]);
 					break;
 				default:
 					break;

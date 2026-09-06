@@ -9,19 +9,23 @@ declare(strict_types=1);
 
 namespace OCA\Recognize\Controller;
 
+use OCA\Recognize\BackgroundJobs\ClassifyClipJob;
 use OCA\Recognize\BackgroundJobs\ClassifyFacesJob;
 use OCA\Recognize\BackgroundJobs\ClassifyImagenetJob;
 use OCA\Recognize\BackgroundJobs\ClassifyLandmarksJob;
 use OCA\Recognize\BackgroundJobs\ClassifyMovinetJob;
 use OCA\Recognize\BackgroundJobs\ClassifyMusicnnJob;
 use OCA\Recognize\BackgroundJobs\ClusterFacesJob;
+use OCA\Recognize\BackgroundJobs\InstallClipJob;
 use OCA\Recognize\BackgroundJobs\InstallInsightfaceJob;
 use OCA\Recognize\BackgroundJobs\SelfUpdateJob;
 use OCA\Recognize\BackgroundJobs\SchedulerJob;
 use OCA\Recognize\BackgroundJobs\StorageCrawlJob;
+use OCA\Recognize\Db\ClipEmbeddingMapper;
 use OCA\Recognize\Db\FaceClusterMapper;
 use OCA\Recognize\Db\FaceDetectionMapper;
 use OCA\Recognize\Migration\InstallDeps;
+use OCA\Recognize\Service\ClipModel;
 use OCA\Recognize\Service\ErrorLog;
 use OCA\Recognize\Service\FaceBackend;
 use OCA\Recognize\Service\FaceBackendSwitcher;
@@ -29,6 +33,7 @@ use OCA\Recognize\Service\FaceClusterMerger;
 use OCA\Recognize\Service\FaceNameSnapshot;
 use OCA\Recognize\Service\ForkUpdater;
 use OCA\Recognize\Service\InsightfaceInstaller;
+use OCA\Recognize\Service\SemanticSearch;
 use OCA\Recognize\Service\QueueService;
 use OCA\Recognize\Service\SettingsService;
 use OCA\Recognize\Service\TagManager;
@@ -64,10 +69,16 @@ final class AdminController extends Controller {
 	private InsightfaceInstaller $insightfaceInstaller;
 	private FaceNameSnapshot $faceNameSnapshot;
 	private ForkUpdater $forkUpdater;
+	private ClipModel $clipModel;
+	private SemanticSearch $semanticSearch;
+	private ClipEmbeddingMapper $clipEmbeddings;
 
-	public function __construct(string $appName, IRequest $request, TagManager $tagManager, IJobList $jobList, SettingsService $settingsService, QueueService $queue, FaceClusterMapper $clusterMapper, FaceDetectionMapper $detectionMapper, IAppConfig $config, FaceDetectionMapper $faceDetections, IBinaryFinder $binaryFinder, ErrorLog $errorLog, TensorflowCheck $tensorflowCheck, FaceClusterMerger $clusterMerger, InstallDeps $installDeps, FaceBackend $faceBackend, FaceBackendSwitcher $faceBackendSwitcher, InsightfaceInstaller $insightfaceInstaller, FaceNameSnapshot $faceNameSnapshot, ForkUpdater $forkUpdater) {
+	public function __construct(string $appName, IRequest $request, TagManager $tagManager, IJobList $jobList, SettingsService $settingsService, QueueService $queue, FaceClusterMapper $clusterMapper, FaceDetectionMapper $detectionMapper, IAppConfig $config, FaceDetectionMapper $faceDetections, IBinaryFinder $binaryFinder, ErrorLog $errorLog, TensorflowCheck $tensorflowCheck, FaceClusterMerger $clusterMerger, InstallDeps $installDeps, FaceBackend $faceBackend, FaceBackendSwitcher $faceBackendSwitcher, InsightfaceInstaller $insightfaceInstaller, FaceNameSnapshot $faceNameSnapshot, ForkUpdater $forkUpdater, ClipModel $clipModel, SemanticSearch $semanticSearch, ClipEmbeddingMapper $clipEmbeddings) {
 		parent::__construct($appName, $request);
 		$this->forkUpdater = $forkUpdater;
+		$this->clipModel = $clipModel;
+		$this->semanticSearch = $semanticSearch;
+		$this->clipEmbeddings = $clipEmbeddings;
 		$this->faceBackend = $faceBackend;
 		$this->faceBackendSwitcher = $faceBackendSwitcher;
 		$this->insightfaceInstaller = $insightfaceInstaller;
@@ -141,6 +152,11 @@ final class AdminController extends Controller {
 		$landmarksCount = $this->queue->count('landmarks');
 		$movinetCount = $this->queue->count('movinet');
 		$musicnnCount = $this->queue->count('musicnn');
+		try {
+			$clipCount = $this->queue->count('clip');
+		} catch (\Throwable $e) {
+			$clipCount = 0;
+		}
 		$clusterFacesCount = $this->faceDetections->countUnclustered();
 		return new JSONResponse([
 			'imagenet' => $imagenetCount,
@@ -148,6 +164,7 @@ final class AdminController extends Controller {
 			'landmarks' => $landmarksCount,
 			'movinet' => $movinetCount,
 			'musicnn' => $musicnnCount,
+			'clip' => $clipCount,
 			'clusterFaces' => $clusterFacesCount,
 		]);
 	}
@@ -159,6 +176,7 @@ final class AdminController extends Controller {
 			'landmarks' => ClassifyLandmarksJob::class,
 			'musicnn' => ClassifyMusicnnJob::class,
 			'movinet' => ClassifyMovinetJob::class,
+			'clip' => ClassifyClipJob::class,
 			'clusterFaces' => ClusterFacesJob::class,
 		];
 		if (!isset($tasks[$task])) {
@@ -376,6 +394,59 @@ final class AdminController extends Controller {
 		$this->settingsService->setRawSetting(InsightfaceInstaller::LOG_SETTING, json_encode(['running' => true, 'lines' => ['Installation scheduled, waiting for the next background job run (cron)…']]));
 		$this->jobList->add(InstallInsightfaceJob::class, ['gpu' => $gpu]);
 		return new JSONResponse(['scheduled' => true]);
+	}
+
+	/**
+	 * State of the natural-language search: model, python, indexed photos, install log.
+	 */
+	public function clipStatus(): JSONResponse {
+		$log = null;
+		try {
+			$log = json_decode($this->settingsService->getRawSetting(ClipModel::INSTALL_LOG, ''), true, 512, JSON_THROW_ON_ERROR);
+		} catch (\Throwable $e) {
+		}
+		try {
+			$indexed = $this->clipEmbeddings->countAll();
+		} catch (\Throwable $e) {
+			$indexed = 0;
+		}
+		return new JSONResponse([
+			'model' => $this->clipModel->getModelName(),
+			'models' => ClipModel::KNOWN_MODELS,
+			'dir' => $this->clipModel->getModelDir(),
+			'installed' => $this->clipModel->isInstalled(),
+			'pythonReady' => $this->clipModel->isPythonReady(),
+			'indexed' => $indexed,
+			'install' => is_array($log) ? $log : null,
+			'installScheduled' => $this->jobList->has(InstallClipJob::class, null),
+		]);
+	}
+
+	public function installClip(): JSONResponse {
+		$this->settingsService->setRawSetting(ClipModel::INSTALL_LOG, json_encode(['running' => true, 'lines' => ['Download scheduled, waiting for the next background job run (cron)…']]));
+		$this->jobList->add(InstallClipJob::class);
+		return new JSONResponse(['scheduled' => true]);
+	}
+
+	/**
+	 * Try a query (admin): best matches with their paths.
+	 */
+	public function clipTest(string $q = '', int $limit = 8): JSONResponse {
+		if (!$this->semanticSearch->isAvailable()) {
+			return new JSONResponse(['message' => 'Natural-language search is not ready'], Http::STATUS_SERVICE_UNAVAILABLE);
+		}
+		try {
+			$results = $this->semanticSearch->search($q, max(1, min($limit, 50)));
+		} catch (\Throwable $e) {
+			return new JSONResponse(['message' => $e->getMessage()], Http::STATUS_INTERNAL_SERVER_ERROR);
+		}
+		$rootFolder = \OCP\Server::get(\OCP\Files\IRootFolder::class);
+		$out = [];
+		foreach ($results as $fileId => $score) {
+			$node = $rootFolder->getFirstNodeById($fileId);
+			$out[] = ['fileid' => $fileId, 'score' => round($score, 3), 'path' => $node !== null ? $node->getPath() : '?'];
+		}
+		return new JSONResponse(['results' => $out]);
 	}
 
 	/**

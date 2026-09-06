@@ -6,6 +6,7 @@ use OC\Files\SetupManager;
 use OC\User\NoUserException;
 use OCA\Recognize\BackgroundJobs\ClusterFacesJob;
 use OCA\Recognize\Classifiers\Audio\MusicnnClassifier;
+use OCA\Recognize\Classifiers\Images\ClipClassifier;
 use OCA\Recognize\Classifiers\Images\ClusteringFaceClassifier;
 use OCA\Recognize\Classifiers\Images\ImagenetClassifier;
 use OCA\Recognize\Classifiers\Video\MovinetClassifier;
@@ -246,6 +247,7 @@ final class FsActionService {
 			if (in_array($node->getMimetype(), Constants::IMAGE_FORMATS)) {
 				$this->queue->insertIntoQueue(ImagenetClassifier::MODEL_NAME, $queueFile);
 				$this->queue->insertIntoQueue(ClusteringFaceClassifier::MODEL_NAME, $queueFile);
+				$this->queue->insertIntoQueue(ClipClassifier::MODEL_NAME, $queueFile);
 			}
 			if (in_array($node->getMimetype(), Constants::VIDEO_FORMATS)) {
 				$this->queue->insertIntoQueue(MovinetClassifier::MODEL_NAME, $queueFile);

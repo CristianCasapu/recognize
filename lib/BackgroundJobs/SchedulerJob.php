@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace OCA\Recognize\BackgroundJobs;
 
 use OCA\Recognize\Classifiers\Audio\MusicnnClassifier;
+use OCA\Recognize\Classifiers\Images\ClipClassifier;
 use OCA\Recognize\Classifiers\Images\ClusteringFaceClassifier;
 use OCA\Recognize\Classifiers\Images\ImagenetClassifier;
 use OCA\Recognize\Classifiers\Images\LandmarksClassifier;
@@ -49,6 +50,7 @@ final class SchedulerJob extends QueuedJob {
 	protected function run($argument): void {
 		/** @var list<string> $models */
 		$models = $argument['models'] ?? [
+			ClipClassifier::MODEL_NAME,
 			ClusteringFaceClassifier::MODEL_NAME,
 			ImagenetClassifier::MODEL_NAME,
 			LandmarksClassifier::MODEL_NAME,

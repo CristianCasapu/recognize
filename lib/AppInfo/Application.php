@@ -12,6 +12,7 @@ use OCA\DAV\Events\SabrePluginAddEvent;
 use OCA\Recognize\Dav\Faces\PropFindPlugin;
 use OCA\Recognize\Hooks\FileListener;
 use OCA\Recognize\Notification\Notifier;
+use OCA\Recognize\SetupChecks\ClipSearch;
 use OCA\Recognize\SetupChecks\CronMode;
 use OCA\Recognize\SetupChecks\DiskSpace;
 use OCA\Recognize\SetupChecks\ForkUpdates;
@@ -76,6 +77,7 @@ final class Application extends App implements IBootstrap {
 		$context->registerSetupCheck(DiskSpace::class);
 		$context->registerSetupCheck(Insightface::class);
 		$context->registerSetupCheck(ForkUpdates::class);
+		$context->registerSetupCheck(ClipSearch::class);
 	}
 
 	/**

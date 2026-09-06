@@ -50,6 +50,10 @@ return [
 		['name' => 'admin#faceBackendStatus', 'url' => '/admin/faces/backend', 'verb' => 'GET'],
 		['name' => 'admin#switchFaceBackend', 'url' => '/admin/faces/backend', 'verb' => 'POST'],
 		['name' => 'admin#installInsightface', 'url' => '/admin/faces/installInsightface', 'verb' => 'POST'],
+		['name' => 'admin#clipStatus', 'url' => '/admin/clip', 'verb' => 'GET'],
+		['name' => 'admin#installClip', 'url' => '/admin/clip/install', 'verb' => 'POST'],
+		['name' => 'admin#clipTest', 'url' => '/admin/clip/test', 'verb' => 'GET'],
+		['name' => 'search#search', 'url' => '/api/search', 'verb' => 'GET'],
 		['name' => 'admin#forkUpdates', 'url' => '/admin/updates', 'verb' => 'GET'],
 		['name' => 'admin#forkUpdate', 'url' => '/admin/updates/{app}', 'verb' => 'POST'],
 		// user API (Memories / Photos person pages)

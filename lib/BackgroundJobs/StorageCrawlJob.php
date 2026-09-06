@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace OCA\Recognize\BackgroundJobs;
 
 use OCA\Recognize\Classifiers\Audio\MusicnnClassifier;
+use OCA\Recognize\Classifiers\Images\ClipClassifier;
 use OCA\Recognize\Classifiers\Images\ClusteringFaceClassifier;
 use OCA\Recognize\Classifiers\Images\ImagenetClassifier;
 use OCA\Recognize\Classifiers\Images\LandmarksClassifier;
@@ -51,6 +52,7 @@ final class StorageCrawlJob extends QueuedJob {
 		 * @var list<string> $models
 		 */
 		$models = $argument['models'] ?? [
+			ClipClassifier::MODEL_NAME,
 			ClusteringFaceClassifier::MODEL_NAME,
 			ImagenetClassifier::MODEL_NAME,
 			LandmarksClassifier::MODEL_NAME,
@@ -85,6 +87,9 @@ final class StorageCrawlJob extends QueuedJob {
 						if (count($landmarkTags) > 0) {
 							$this->queue->insertIntoQueue(LandmarksClassifier::MODEL_NAME, $queueFile);
 						}
+					}
+					if (in_array(ClipClassifier::MODEL_NAME, $models)) {
+						$this->queue->insertIntoQueue(ClipClassifier::MODEL_NAME, $queueFile);
 					}
 					if (in_array(ClusteringFaceClassifier::MODEL_NAME, $models)) {
 						$this->queue->insertIntoQueue(ClusteringFaceClassifier::MODEL_NAME, $queueFile);

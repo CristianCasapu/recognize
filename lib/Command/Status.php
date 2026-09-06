@@ -7,6 +7,7 @@
 declare(strict_types=1);
 namespace OCA\Recognize\Command;
 
+use OCA\Recognize\BackgroundJobs\ClassifyClipJob;
 use OCA\Recognize\BackgroundJobs\ClassifyFacesJob;
 use OCA\Recognize\BackgroundJobs\ClassifyImagenetJob;
 use OCA\Recognize\BackgroundJobs\ClassifyLandmarksJob;
@@ -78,12 +79,13 @@ final class Status extends Command {
 			'landmarks' => ClassifyLandmarksJob::class,
 			'movinet' => ClassifyMovinetJob::class,
 			'musicnn' => ClassifyMusicnnJob::class,
+			'clip' => ClassifyClipJob::class,
 		] as $model => $jobClass) {
 			$status = $this->settingsService->getSetting($model . '.status');
 			$table->addRow([
 				$model,
 				$this->settingsService->getSetting($model . '.enabled') === 'true' ? 'yes' : 'no',
-				$this->queue->count($model),
+				$this->countQueue($model),
 				$this->countJobs($jobClass),
 				$fmt($this->settingsService->getSetting($model . '.lastFile')),
 				$status === 'true' ? 'yes' : ($status === 'false' ? 'FAILED' : '-'),
@@ -114,6 +116,14 @@ final class Status extends Command {
 			$output->writeln('  ' . date('Y-m-d H:i', $entry['time']) . ' [' . $entry['level'] . '] ' . $entry['message'] . ($entry['detail'] !== '' ? ' — ' . $entry['detail'] : '') . ($entry['count'] > 1 ? ' (×' . $entry['count'] . ')' : ''));
 		}
 		return 0;
+	}
+
+	private function countQueue(string $model): string {
+		try {
+			return (string)$this->queue->count($model);
+		} catch (\Throwable $e) {
+			return '-';
+		}
 	}
 
 	private function countJobs(string $class): int {

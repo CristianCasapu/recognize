@@ -21,8 +21,8 @@ final class InsightfaceInstaller {
 	public const CHECK_CACHE = 'insightface.checkCache';
 	public const CHECK_TTL = 3600;
 	/** onnxruntime-gpu 1.18 is the last line built for CUDA 11 / cuDNN 8, which the bundled libtensorflow needs as well */
-	public const PACKAGES_GPU = ['numpy<2', 'onnxruntime-gpu==1.18.1', 'opencv-python-headless', 'onnx', 'insightface'];
-	public const PACKAGES_CPU = ['numpy<2', 'onnxruntime==1.18.1', 'opencv-python-headless', 'onnx', 'insightface'];
+	public const PACKAGES_GPU = ['numpy<2', 'onnxruntime-gpu==1.18.1', 'opencv-python-headless', 'onnx', 'insightface', 'pillow', 'tokenizers', 'huggingface_hub'];
+	public const PACKAGES_CPU = ['numpy<2', 'onnxruntime==1.18.1', 'opencv-python-headless', 'onnx', 'insightface', 'pillow', 'tokenizers', 'huggingface_hub'];
 
 	public function __construct(
 		private SettingsService $settingsService,

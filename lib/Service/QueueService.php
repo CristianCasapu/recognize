@@ -7,12 +7,14 @@
 declare(strict_types=1);
 namespace OCA\Recognize\Service;
 
+use OCA\Recognize\BackgroundJobs\ClassifyClipJob;
 use OCA\Recognize\BackgroundJobs\ClassifyFacesJob;
 use OCA\Recognize\BackgroundJobs\ClassifyImagenetJob;
 use OCA\Recognize\BackgroundJobs\ClassifyLandmarksJob;
 use OCA\Recognize\BackgroundJobs\ClassifyMovinetJob;
 use OCA\Recognize\BackgroundJobs\ClassifyMusicnnJob;
 use OCA\Recognize\Classifiers\Audio\MusicnnClassifier;
+use OCA\Recognize\Classifiers\Images\ClipClassifier;
 use OCA\Recognize\Classifiers\Images\ClusteringFaceClassifier;
 use OCA\Recognize\Classifiers\Images\ImagenetClassifier;
 use OCA\Recognize\Classifiers\Images\LandmarksClassifier;
@@ -32,6 +34,7 @@ final class QueueService {
 		LandmarksClassifier::MODEL_NAME => ClassifyLandmarksJob::class,
 		MovinetClassifier::MODEL_NAME => ClassifyMovinetJob::class,
 		MusicnnClassifier::MODEL_NAME => ClassifyMusicnnJob::class,
+		ClipClassifier::MODEL_NAME => ClassifyClipJob::class,
 	];
 
 	private QueueMapper $queueMapper;
