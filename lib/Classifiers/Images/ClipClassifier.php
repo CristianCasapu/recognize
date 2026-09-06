@@ -61,7 +61,7 @@ final class ClipClassifier extends Classifier {
 			throw new \ErrorException('The CLIP model is not installed (occ recognize:install-clip)');
 		}
 		$model = $this->clipModel->getModelName();
-		// Files that already have an embedding of this model are done (re-index with occ recognize:reset-clip)
+		// Files that already have an embedding of this model are done
 		$pending = [];
 		foreach ($queueFiles as $queueFile) {
 			$existing = $this->embeddings->findByFileId($queueFile->getFileId());

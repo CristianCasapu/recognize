@@ -54,6 +54,7 @@ return [
 		['name' => 'admin#installClip', 'url' => '/admin/clip/install', 'verb' => 'POST'],
 		['name' => 'admin#clipTest', 'url' => '/admin/clip/test', 'verb' => 'GET'],
 		['name' => 'search#search', 'url' => '/api/search', 'verb' => 'GET'],
+		['name' => 'similar#groups', 'url' => '/api/similar', 'verb' => 'GET'],
 		['name' => 'admin#forkUpdates', 'url' => '/admin/updates', 'verb' => 'GET'],
 		['name' => 'admin#forkUpdate', 'url' => '/admin/updates/{app}', 'verb' => 'POST'],
 		// user API (Memories / Photos person pages)
