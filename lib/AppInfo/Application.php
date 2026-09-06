@@ -14,6 +14,7 @@ use OCA\Recognize\Hooks\FileListener;
 use OCA\Recognize\Notification\Notifier;
 use OCA\Recognize\SetupChecks\CronMode;
 use OCA\Recognize\SetupChecks\DiskSpace;
+use OCA\Recognize\SetupChecks\Insightface;
 use OCA\Recognize\SetupChecks\ModelsDownloaded;
 use OCA\Recognize\SetupChecks\NodeBinary;
 use OCA\Recognize\SetupChecks\QueueHealth;
@@ -72,6 +73,7 @@ final class Application extends App implements IBootstrap {
 		$context->registerSetupCheck(QueueHealth::class);
 		$context->registerSetupCheck(RecentErrors::class);
 		$context->registerSetupCheck(DiskSpace::class);
+		$context->registerSetupCheck(Insightface::class);
 	}
 
 	/**

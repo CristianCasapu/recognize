@@ -66,6 +66,15 @@ final class SettingsService {
 		'tensorflow.ldLibraryPath' => '',
 		// Notify admins via Nextcloud notifications when jobs fail
 		'notifications.enabled' => 'true',
+		// Face backend: 'faceapi' (Node.js, built in) or 'insightface' (Python, RetinaFace + ArcFace)
+		'faces.backend' => 'faceapi',
+		'python_binary' => '',
+		'insightface.root' => '',
+		'insightface.model' => 'buffalo_l',
+		// Advanced clustering overrides (empty = backend default, see FaceBackend::PARAMS)
+		'faces.clusterSeparation' => '',
+		'faces.clusterEdgeLength' => '',
+		'faces.assignThreshold' => '',
 	];
 
 	/** @var array<string,string>  */
@@ -106,6 +115,12 @@ final class SettingsService {
 		'faces.autoMergeThreshold',
 		'tensorflow.ldLibraryPath',
 		'notifications.enabled',
+		'python_binary',
+		'insightface.root',
+		'insightface.model',
+		'faces.clusterSeparation',
+		'faces.clusterEdgeLength',
+		'faces.assignThreshold',
 	];
 
 	private IAppConfig $config;

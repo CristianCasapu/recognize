@@ -10,6 +10,7 @@ namespace OCA\Recognize\BackgroundJobs;
 use OCA\Recognize\Service\AdminNotifier;
 use OCA\Recognize\Service\FaceClusterAnalyzer;
 use OCA\Recognize\Service\FaceClusterMerger;
+use OCA\Recognize\Service\FaceNameSnapshot;
 use OCA\Recognize\Service\Logger;
 use OCA\Recognize\Service\SettingsService;
 use OCP\AppFramework\Utility\ITimeFactory;
@@ -24,8 +25,10 @@ final class ClusterFacesJob extends QueuedJob {
 	private SettingsService $settingsService;
 	private FaceClusterMerger $clusterMerger;
 	private AdminNotifier $adminNotifier;
+	private FaceNameSnapshot $nameSnapshot;
 
-	public function __construct(ITimeFactory $time, Logger $logger, IJobList $jobList, FaceClusterAnalyzer $clusterAnalyzer, SettingsService $settingsService, FaceClusterMerger $clusterMerger, AdminNotifier $adminNotifier) {
+	public function __construct(ITimeFactory $time, Logger $logger, IJobList $jobList, FaceClusterAnalyzer $clusterAnalyzer, SettingsService $settingsService, FaceClusterMerger $clusterMerger, AdminNotifier $adminNotifier, FaceNameSnapshot $nameSnapshot) {
+		$this->nameSnapshot = $nameSnapshot;
 		parent::__construct($time);
 		$this->logger = $logger;
 		$this->jobList = $jobList;
@@ -55,6 +58,8 @@ final class ClusterFacesJob extends QueuedJob {
 			$this->clusterAnalyzer->calculateClusters($userId, $batchSize);
 			// Fold unnamed clusters into the named cluster of the same person (no-op when faces.autoMergeThreshold is 0)
 			$this->clusterMerger->merge($userId);
+			// After a backend switch: hand the saved person names to the matching new clusters
+			$this->nameSnapshot->restorePending();
 		} catch (\Throwable $e) {
 			$this->settingsService->setSetting('clusterFaces.status', 'false');
 			$this->logger->error('Failed to calculate face clusters', ['exception' => $e]);

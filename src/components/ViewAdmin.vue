@@ -101,6 +101,57 @@
 					@update:value="onChange" />
 			</p>
 			<p>&nbsp;</p>
+			<h3>{{ t('recognize', 'Face model') }}</h3>
+			<p>{{ t('recognize', 'Two face models are available. The built-in face-api model (Node.js, 128 numbers per face) is fast but often mixes up similar looking people, especially children and relatives. InsightFace (RetinaFace detector + ArcFace, 512 numbers per face, runs in Python through ONNX Runtime, on the GPU if available) separates people far more reliably and lets new photos be assigned to known people directly. The two are not compatible: switching removes all detected faces and clusters; the person names are saved and restored automatically after the next scan and clustering.') }}</p>
+			<template v-if="faceBackend">
+				<NcNoteCard :type="faceBackend.backend === 'insightface' ? 'success' : 'info'">
+					{{ t('recognize', 'Active face model: {backend}', { backend: faceBackend.backend === 'insightface' ? 'InsightFace (RetinaFace + ArcFace)' : 'face-api (built-in)' }) }}
+					<span v-if="faceBackend.pendingNameSnapshot">— {{ t('recognize', 'person names from the previous model will be restored after the next clustering run') }}</span>
+				</NcNoteCard>
+				<NcNoteCard v-if="faceBackend.insightface.ok" show-alert type="success">
+					{{ t('recognize', 'InsightFace {version} with ONNX Runtime {ort} is installed ({device}) in {python}.', { version: faceBackend.insightface.versions.insightface, ort: faceBackend.insightface.versions.onnxruntime, device: faceBackend.insightface.gpu ? 'GPU' : 'CPU', python: faceBackend.insightface.python }) }}
+				</NcNoteCard>
+				<NcNoteCard v-else type="warning">
+					{{ t('recognize', 'InsightFace is not installed ({detail}). It can be installed without root access into the Nextcloud data directory: click the button below (runs as a background job, needs python3, python3-venv and a C compiler on the server, downloads about 500 MB) or run on the server:', { detail: faceBackend.insightface.output ? faceBackend.insightface.output.split('\n').pop() : '' }) }}
+					<pre><code>occ recognize:install-insightface        # add --cpu without an NVIDIA GPU
+occ recognize:switch-face-backend insightface</code></pre>
+				</NcNoteCard>
+				<div v-if="faceBackend.install" class="recognize-output-box">
+					<strong>{{ faceBackend.install.running ? t('recognize', 'Installation in progress…') : (faceBackend.install.ok ? t('recognize', 'Installation finished') : t('recognize', 'Installation failed')) }}</strong>
+					<pre class="recognize-output">{{ (faceBackend.install.lines || []).slice(-15).join('\n') }}</pre>
+				</div>
+				<p>
+					<button v-if="!faceBackend.insightface.ok"
+						class="button"
+						:disabled="backendBusy || (faceBackend.install && faceBackend.install.running) || faceBackend.installScheduled"
+						@click="onInstallInsightface">
+						{{ t('recognize', 'Install InsightFace (background job)') }}
+					</button>
+					<button v-if="faceBackend.backend !== 'insightface'"
+						class="button primary"
+						:disabled="backendBusy || !faceBackend.insightface.ok || !settings['faces.enabled']"
+						@click="onSwitchFaceBackend('insightface')">
+						{{ t('recognize', 'Switch to InsightFace (recommended)') }}
+					</button>
+					<button v-else
+						class="button"
+						:disabled="backendBusy || !settings['faces.enabled']"
+						@click="onSwitchFaceBackend('faceapi')">
+						{{ t('recognize', 'Switch back to face-api') }}
+					</button>
+					<button class="button" :disabled="backendBusy" @click="getFaceBackendStatus(true)">
+						{{ t('recognize', 'Re-check') }}
+					</button>
+					<span v-if="backendBusy" class="icon-loading-small" />
+				</p>
+				<p>
+					<NcTextField :value.sync="settings['python_binary']"
+						:label-visible="true"
+						:label="t('recognize', 'Python binary of the InsightFace environment (optional; default: <data>/appdata_*/recognize/insightface/venv/bin/python)')"
+						@update:value="onChange" />
+				</p>
+			</template>
+			<p>&nbsp;</p>
 			<h3>{{ t('recognize', 'Small faces') }}</h3>
 			<p>{{ t('recognize', 'The face detector looks at a 512px copy of each image, so faces that are small in the picture (group photos, people in the background) are not found. With tiling enabled the detector additionally scans overlapping quarters of the image (4 extra passes per image, fast on a GPU). A larger preview improves the quality of the face descriptors of small faces. Files that were already processed are not scanned again automatically; use "Reset faces for classified files" and "Rescan all files" below to apply the new settings to existing photos.') }}</p>
 			<p>
@@ -582,7 +633,7 @@ import { generateUrl } from '@nextcloud/router'
 import { loadState } from '@nextcloud/initial-state'
 import humanizeDuration from 'humanize-duration'
 
-const SETTINGS = ['tensorflow.cores', 'tensorflow.gpu', 'tensorflow.purejs', 'tensorflow.ldLibraryPath', 'imagenet.enabled', 'landmarks.enabled', 'faces.enabled', 'musicnn.enabled', 'movinet.enabled', 'node_binary', 'ffmpeg_binary', 'faces.status', 'imagenet.status', 'landmarks.status', 'movinet.status', 'musicnn.status', 'faces.lastFile', 'imagenet.lastFile', 'landmarks.lastFile', 'movinet.lastFile', 'musicnn.lastFile', 'faces.batchSize', 'imagenet.batchSize', 'landmarks.batchSize', 'movinet.batchSize', 'musicnn.batchSize', 'faces.previewDimension', 'faces.tiling', 'faces.minDetectionSize', 'faces.autoMergeThreshold', 'clusterFaces.status', 'clusterFaces.lastRun', 'nice_binary', 'nice_value', 'concurrency.enabled', 'notifications.enabled']
+const SETTINGS = ['tensorflow.cores', 'tensorflow.gpu', 'tensorflow.purejs', 'tensorflow.ldLibraryPath', 'python_binary', 'imagenet.enabled', 'landmarks.enabled', 'faces.enabled', 'musicnn.enabled', 'movinet.enabled', 'node_binary', 'ffmpeg_binary', 'faces.status', 'imagenet.status', 'landmarks.status', 'movinet.status', 'musicnn.status', 'faces.lastFile', 'imagenet.lastFile', 'landmarks.lastFile', 'movinet.lastFile', 'musicnn.lastFile', 'faces.batchSize', 'imagenet.batchSize', 'landmarks.batchSize', 'movinet.batchSize', 'musicnn.batchSize', 'faces.previewDimension', 'faces.tiling', 'faces.minDetectionSize', 'faces.autoMergeThreshold', 'clusterFaces.status', 'clusterFaces.lastRun', 'nice_binary', 'nice_value', 'concurrency.enabled', 'notifications.enabled']
 
 const BOOLEAN_SETTINGS = ['tensorflow.gpu', 'tensorflow.purejs', 'imagenet.enabled', 'landmarks.enabled', 'faces.enabled', 'musicnn.enabled', 'movinet.enabled', 'faces.status', 'imagenet.status', 'landmarks.status', 'movinet.status', 'musicnn.status', 'faces.lastFile', 'imagenet.lastFile', 'landmarks.lastFile', 'movinet.lastFile', 'musicnn.lastFile', 'clusterFaces.status', 'concurrency.enabled', 'faces.tiling', 'notifications.enabled']
 
@@ -621,6 +672,9 @@ export default {
 			tagsEnabled: null,
 			errors: [],
 			tensorflow: undefined,
+			faceBackend: null,
+			backendBusy: false,
+			installPoll: null,
 			mergeSuggestions: null,
 			mergeResult: null,
 			mergeBusy: false,
@@ -667,6 +721,7 @@ export default {
 		this.getCronStatus()
 		this.getErrors()
 		this.getTensorflowStatus()
+		this.getFaceBackendStatus()
 		this.getJobsStatus('imagenet')
 		this.getJobsStatus('faces')
 		this.getJobsStatus('landmarks')
@@ -856,6 +911,65 @@ export default {
 			this.getLibtensorflowStatus()
 			this.getTensorflowStatus()
 		},
+		async getFaceBackendStatus(refresh = false) {
+			try {
+				const resp = await axios.get(generateUrl('/apps/recognize/admin/faces/backend'), { params: { refresh: refresh ? 1 : 0 } })
+				this.faceBackend = resp.data
+				const running = resp.data.install && resp.data.install.running
+				if (running && !this.installPoll) {
+					this.installPoll = setInterval(() => this.getFaceBackendStatus(), 10000)
+				} else if (!running && this.installPoll) {
+					clearInterval(this.installPoll)
+					this.installPoll = null
+					this.getFaceBackendStatus(true)
+				}
+			} catch (e) {
+				console.error(e)
+			}
+		},
+		async onInstallInsightface() {
+			this.backendBusy = true
+			try {
+				await axios.post(generateUrl('/apps/recognize/admin/faces/installInsightface'), { gpu: this.settings['tensorflow.gpu'] === true })
+				await this.getFaceBackendStatus()
+			} catch (e) {
+				console.error(e)
+				this.error = this.t('recognize', 'Could not schedule the InsightFace installation')
+			} finally {
+				this.backendBusy = false
+			}
+		},
+		async onSwitchFaceBackend(backend) {
+			const confirmed = await new Promise((resolve) => {
+				OC.dialogs.confirm(
+					this.t('recognize', 'Switching the face model removes all detected faces and face clusters, because the face descriptors of the two models are incompatible. The names you gave to people are saved and restored automatically after the photos have been scanned and clustered again. Continue and switch to "{backend}"?', { backend }),
+					this.t('recognize', 'Switch face model'),
+					resolve,
+					true,
+				)
+			})
+			if (!confirmed) {
+				return
+			}
+			this.backendBusy = true
+			try {
+				const resp = await axios.post(generateUrl('/apps/recognize/admin/faces/backend'), { backend })
+				this.success = true
+				setTimeout(() => {
+					this.success = false
+				}, 3000)
+				if (resp.data.snapshot) {
+					OC.Notification.showTemporary(this.t('recognize', 'Saved {names} person names; a new face scan has been scheduled.', { names: resp.data.snapshot.titles }))
+				}
+				await this.getFaceBackendStatus()
+				await this.getCount()
+			} catch (e) {
+				console.error(e)
+				this.error = (e.response && e.response.data && e.response.data.message) || this.t('recognize', 'Switching the face model failed')
+			} finally {
+				this.backendBusy = false
+			}
+		},
 		async getMergeSuggestions() {
 			this.mergeBusy = true
 			this.mergeResult = null
@@ -1024,5 +1138,9 @@ figure[class^='icon-'] {
 #recognize h3 {
 	font-weight: bold;
 	margin-top: 8px;
+}
+
+#recognize .recognize-output-box {
+	margin: 8px 0;
 }
 </style>

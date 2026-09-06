@@ -31,12 +31,14 @@ final class FaceClusterAnalyzer {
 	private Logger $logger;
 	private int $minDatasetSize = self::MIN_DATASET_SIZE;
 	private SettingsService $settingsService;
+	private FaceBackend $backend;
 
-	public function __construct(FaceDetectionMapper $faceDetections, FaceClusterMapper $faceClusters, Logger $logger, SettingsService $settingsService) {
+	public function __construct(FaceDetectionMapper $faceDetections, FaceClusterMapper $faceClusters, Logger $logger, SettingsService $settingsService, FaceBackend $backend) {
 		$this->faceDetections = $faceDetections;
 		$this->faceClusters = $faceClusters;
 		$this->logger = $logger;
 		$this->settingsService = $settingsService;
+		$this->backend = $backend;
 	}
 
 	public function setMinDatasetSize(int $minSize) : void {
@@ -94,6 +96,20 @@ final class FaceClusterAnalyzer {
 		}
 
 
+		$params = $this->backend->getParams();
+
+		// With a discriminative embedding (InsightFace) most new faces belong to a person that already
+		// has a cluster: assign those directly by centroid distance instead of running them through
+		// HDBSCAN, which cannot grow existing clusters reliably and is O(n²).
+		if ($params['assignThreshold'] > 0 && count($existingClusters) > 0) {
+			$assigned = $this->assignToExistingClusters($existingClusters, array_merge($freshDetections, $rejectedDetections), $params['assignThreshold'], $params['assignMargin']);
+			if ($assigned > 0) {
+				$this->logger->debug('ClusterDebug: Assigned ' . $assigned . ' detections directly to existing clusters');
+				$freshDetections = array_values(array_filter($freshDetections, static fn (FaceDetection $d) => $d->getClusterId() === null));
+				$rejectedDetections = array_values(array_filter($rejectedDetections, static fn (FaceDetection $d) => $d->getClusterId() === -1));
+			}
+		}
+
 		$unclusteredDetections = array_merge($freshDetections, $rejectedDetections);
 		$detections = array_merge($unclusteredDetections, $sampledDetections);
 
@@ -115,7 +131,7 @@ final class FaceClusterAnalyzer {
 		$hdbscan = new HDBSCAN($dataset, $this->getMinClusterSize($n), $this->getMinSampleSize($n));
 
 		$numberOfClusteredDetections = 0;
-		$clusters = $hdbscan->predict(self::MIN_CLUSTER_SEPARATION, self::MAX_CLUSTER_EDGE_LENGTH);
+		$clusters = $hdbscan->predict($params['clusterSeparation'], $params['clusterEdgeLength']);
 
 		foreach ($clusters as $flatCluster) {
 			/** @var int[] $detectionKeys */
@@ -204,14 +220,63 @@ final class FaceClusterAnalyzer {
 	}
 
 	/**
+	 * Assign unclustered detections to the nearest existing cluster when it is unambiguous.
+	 *
+	 * @param list<FaceCluster> $clusters
+	 * @param list<FaceDetection> $detections
+	 * @return int number of assigned detections
+	 * @throws \OCP\DB\Exception
+	 */
+	private function assignToExistingClusters(array $clusters, array $detections, float $threshold, float $margin): int {
+		$centroids = [];
+		foreach ($clusters as $cluster) {
+			$sample = $this->faceDetections->findByClusterIdLimited($cluster->getId(), FaceClusterMerger::SAMPLE_SIZE);
+			if (count($sample) === 0) {
+				continue;
+			}
+			$centroids[$cluster->getId()] = ['cluster' => $cluster, 'centroid' => self::calculateCentroidOfDetections($sample)];
+		}
+		if (count($centroids) === 0) {
+			return 0;
+		}
+		$assigned = 0;
+		foreach ($detections as $detection) {
+			$best = null;
+			$bestDistance = INF;
+			$secondDistance = INF;
+			foreach ($centroids as $entry) {
+				$distance = self::distance($detection->getVector(), $entry['centroid']);
+				if ($distance < $bestDistance) {
+					$secondDistance = $bestDistance;
+					$bestDistance = $distance;
+					$best = $entry['cluster'];
+				} elseif ($distance < $secondDistance) {
+					$secondDistance = $distance;
+				}
+			}
+			if ($best === null || $bestDistance >= $threshold || $secondDistance - $bestDistance < $margin) {
+				continue;
+			}
+			if ($detection->getThreshold() > 0.0 && $bestDistance >= $detection->getThreshold()) {
+				// the user moved this face away from a cluster; respect that
+				continue;
+			}
+			$this->faceDetections->assocWithCluster($detection, $best);
+			$assigned++;
+		}
+		return $assigned;
+	}
+
+	/**
 	 * @param FaceDetection[] $detections
 	 * @return list<float>
 	 */
 	public static function calculateCentroidOfDetections(array $detections): array {
-		// init 128 dimensional vector
+		// init zero vector with the dimensionality of the embeddings (128 for face-api, 512 for InsightFace)
+		$dimensions = count($detections) > 0 ? count(reset($detections)->getVector()) : self::DIMENSIONS;
 		/** @var list<float> $sum */
 		$sum = [];
-		for ($i = 0; $i < self::DIMENSIONS; $i++) {
+		for ($i = 0; $i < $dimensions; $i++) {
 			$sum[] = 0.0;
 		}
 

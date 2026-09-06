@@ -123,6 +123,9 @@ The app does not send any sensitive data to cloud providers or similar services.
 		<command>OCA\Recognize\Command\ClusterFaces</command>
 		<command>OCA\Recognize\Command\MergeClusters</command>
 		<command>OCA\Recognize\Command\RescanFaces</command>
+		<command>OCA\Recognize\Command\SwitchFaceBackend</command>
+		<command>OCA\Recognize\Command\RestoreFaceNames</command>
+		<command>OCA\Recognize\Command\InstallInsightface</command>
 	</commands>
 
 	<settings>

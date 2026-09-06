@@ -47,5 +47,8 @@ return [
 		['name' => 'admin#installDeps', 'url' => '/admin/installDeps', 'verb' => 'POST'],
 		['name' => 'admin#mergeSuggestions', 'url' => '/admin/faces/mergeSuggestions', 'verb' => 'GET'],
 		['name' => 'admin#autoMerge', 'url' => '/admin/faces/autoMerge', 'verb' => 'POST'],
+		['name' => 'admin#faceBackendStatus', 'url' => '/admin/faces/backend', 'verb' => 'GET'],
+		['name' => 'admin#switchFaceBackend', 'url' => '/admin/faces/backend', 'verb' => 'POST'],
+		['name' => 'admin#installInsightface', 'url' => '/admin/faces/installInsightface', 'verb' => 'POST'],
 	],
 ];

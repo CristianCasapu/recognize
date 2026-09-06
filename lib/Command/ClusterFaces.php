@@ -10,6 +10,7 @@ namespace OCA\Recognize\Command;
 use OCA\Recognize\Db\FaceDetectionMapper;
 use OCA\Recognize\Service\FaceClusterAnalyzer;
 use OCA\Recognize\Service\FaceClusterMerger;
+use OCA\Recognize\Service\FaceNameSnapshot;
 use OCA\Recognize\Service\Logger;
 use OCA\Recognize\Service\SettingsService;
 use OCP\DB\Exception;
@@ -26,8 +27,10 @@ final class ClusterFaces extends Command {
 	private FaceClusterAnalyzer $clusterAnalyzer;
 	private SettingsService $settingsService;
 	private FaceClusterMerger $clusterMerger;
+	private FaceNameSnapshot $nameSnapshot;
 
-	public function __construct(Logger $logger, FaceDetectionMapper $detectionMapper, FaceClusterAnalyzer $clusterAnalyzer, SettingsService $settingsService, FaceClusterMerger $clusterMerger) {
+	public function __construct(Logger $logger, FaceDetectionMapper $detectionMapper, FaceClusterAnalyzer $clusterAnalyzer, SettingsService $settingsService, FaceClusterMerger $clusterMerger, FaceNameSnapshot $nameSnapshot) {
+		$this->nameSnapshot = $nameSnapshot;
 		parent::__construct();
 		$this->logger = $logger;
 		$this->detectionMapper = $detectionMapper;
@@ -72,6 +75,10 @@ final class ClusterFaces extends Command {
 				$merged = $this->clusterMerger->merge($userId);
 				if (count($merged) > 0) {
 					$this->logger->info('Auto-merged ' . count($merged) . ' unnamed cluster(s) into named clusters for user ' . $userId);
+				}
+				$restored = $this->nameSnapshot->restorePending();
+				if (count($restored) > 0) {
+					$this->logger->info('Restored ' . count($restored) . ' person name(s) from the pending snapshot: ' . implode(', ', array_keys($restored)));
 				}
 			} catch (\JsonException|Exception $e) {
 				$this->settingsService->setSetting('clusterFaces.status', 'false');

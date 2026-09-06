@@ -81,6 +81,19 @@ abstract class Classifier {
 	}
 
 	/**
+	 * The process that classifies the files whose paths are written to its stdin.
+	 *
+	 * @return list<string>
+	 */
+	protected function getClassifierCommand(string $model): array {
+		return [
+			$this->config->getAppValueString('node_binary', lazy: true),
+			dirname(__DIR__, 2) . '/src/classifier_' . $model . '.js',
+			'-'
+		];
+	}
+
+	/**
 	 * @param list<QueueFile> $queueFiles
 	 * @throws \ErrorException|\RuntimeException
 	 */
@@ -184,11 +197,7 @@ abstract class Classifier {
 
 		$this->logger->debug('Classifying '.var_export($paths, true));
 
-		$command = [
-			$this->config->getAppValueString('node_binary', lazy: true),
-			dirname(__DIR__, 2) . '/src/classifier_'.$model.'.js',
-			'-'
-		];
+		$command = $this->getClassifierCommand($model);
 
 		if (trim($this->config->getAppValueString('nice_binary', '', lazy: true)) !== '') {
 			$command = [

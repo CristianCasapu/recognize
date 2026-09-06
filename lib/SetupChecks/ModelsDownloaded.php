@@ -7,6 +7,7 @@
 declare(strict_types=1);
 namespace OCA\Recognize\SetupChecks;
 
+use OCA\Recognize\Service\FaceBackend;
 use OCA\Recognize\Service\SettingsService;
 use OCP\IL10N;
 use OCP\IURLGenerator;
@@ -27,6 +28,7 @@ final class ModelsDownloaded implements ISetupCheck {
 		private IL10N $l10n,
 		private IURLGenerator $urlGenerator,
 		private SettingsService $settingsService,
+		private FaceBackend $faceBackend,
 	) {
 	}
 
@@ -44,6 +46,9 @@ final class ModelsDownloaded implements ISetupCheck {
 		foreach (self::MODEL_DIRS as $model => $dirs) {
 			if ($this->settingsService->getSetting($model . '.enabled') !== 'true') {
 				continue;
+			}
+			if ($model === 'faces' && $this->faceBackend->isInsightface()) {
+				continue; // checked by the InsightFace setup check
 			}
 			foreach ($dirs as $dir) {
 				if (!is_dir($appDir . '/' . $dir)) {

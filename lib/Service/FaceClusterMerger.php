@@ -38,11 +38,22 @@ final class FaceClusterMerger {
 		private FaceClusterMapper $faceClusters,
 		private Logger $logger,
 		private SettingsService $settingsService,
+		private FaceBackend $backend,
 	) {
 	}
 
+	/**
+	 * 0 = automatic merging disabled
+	 */
 	public function getConfiguredThreshold(): float {
 		return (float)$this->settingsService->getSetting('faces.autoMergeThreshold');
+	}
+
+	/**
+	 * Sensible threshold for the active backend (used by the dry-run tools when merging is disabled)
+	 */
+	public function getDefaultThreshold(): float {
+		return $this->backend->getParams()['mergeThreshold'];
 	}
 
 	/**

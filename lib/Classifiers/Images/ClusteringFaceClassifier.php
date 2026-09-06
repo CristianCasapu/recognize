@@ -11,6 +11,7 @@ use OCA\Recognize\BackgroundJobs\ClusterFacesJob;
 use OCA\Recognize\Classifiers\Classifier;
 use OCA\Recognize\Db\FaceDetection;
 use OCA\Recognize\Db\FaceDetectionMapper;
+use OCA\Recognize\Service\FaceBackend;
 use OCA\Recognize\Service\Logger;
 use OCA\Recognize\Service\QueueService;
 use OCP\AppFramework\Services\IAppConfig;
@@ -41,6 +42,26 @@ final class ClusteringFaceClassifier extends Classifier {
 	public const ADDITIVE_DUPLICATE_IOU = 0.5;
 
 	private bool $additive = false;
+	private ?FaceBackend $backend = null;
+
+	private function getBackend(): FaceBackend {
+		return $this->backend ??= \OCP\Server::get(FaceBackend::class);
+	}
+
+	/**
+	 * @return list<string>
+	 */
+	#[Override]
+	protected function getClassifierCommand(string $model): array {
+		if ($this->getBackend()->isInsightface()) {
+			return [
+				$this->getBackend()->getPythonBinary(),
+				dirname(__DIR__, 3) . '/src/classifier_faces_insightface.py',
+				'-'
+			];
+		}
+		return parent::getClassifierCommand($model);
+	}
 
 	public function __construct(
 		Logger $logger,
@@ -83,10 +104,14 @@ final class ClusteringFaceClassifier extends Classifier {
 	 */
 	#[Override]
 	protected function getExtraEnvironment(): array {
+		$env = [];
 		if ($this->config->getAppValueString('faces.tiling', 'false', lazy: true) === 'true') {
-			return ['RECOGNIZE_FACES_TILING' => 'true'];
+			$env['RECOGNIZE_FACES_TILING'] = 'true';
 		}
-		return [];
+		if ($this->getBackend()->isInsightface()) {
+			$env = array_merge($env, $this->getBackend()->getInsightfaceEnvironment());
+		}
+		return $env;
 	}
 
 	/**
@@ -145,6 +170,7 @@ final class ClusteringFaceClassifier extends Classifier {
 			$filteredQueueFiles[] = $queueFile;
 		}
 
+		$params = $this->getBackend()->getParams();
 		$classifierProcess = $this->classifyFiles(self::MODEL_NAME, $filteredQueueFiles, $timeout);
 
 		/**
@@ -153,11 +179,11 @@ final class ClusteringFaceClassifier extends Classifier {
 		foreach ($classifierProcess as $queueFile => $faces) {
 			$this->logger->debug('Face results for ' . $queueFile->getFileId() . ' are in');
 			foreach ($faces as $face) {
-				if ($face['score'] < self::MIN_FACE_RECOGNITION_SCORE) {
+				if ($face['score'] < $params['minScore']) {
 					$this->logger->debug('Face score too low. continuing with next face.');
 					continue;
 				}
-				if (abs($face['angle']['roll']) > self::MAX_FACE_ROLL || abs($face['angle']['yaw']) > self::MAX_FACE_YAW) {
+				if (abs($face['angle']['roll']) > $params['maxRoll'] || abs($face['angle']['yaw']) > $params['maxYaw']) {
 					$this->logger->debug('Face is not straight. continuing with next face.');
 					continue;
 				}

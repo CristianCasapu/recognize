@@ -40,7 +40,7 @@ final class MergeClusters extends Command {
 			? (float)$input->getOption('threshold')
 			: $this->merger->getConfiguredThreshold();
 		if ($threshold <= 0) {
-			$threshold = FaceClusterMerger::DEFAULT_THRESHOLD;
+			$threshold = $this->merger->getDefaultThreshold();
 		}
 
 		try {

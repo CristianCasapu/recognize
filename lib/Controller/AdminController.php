@@ -15,13 +15,18 @@ use OCA\Recognize\BackgroundJobs\ClassifyLandmarksJob;
 use OCA\Recognize\BackgroundJobs\ClassifyMovinetJob;
 use OCA\Recognize\BackgroundJobs\ClassifyMusicnnJob;
 use OCA\Recognize\BackgroundJobs\ClusterFacesJob;
+use OCA\Recognize\BackgroundJobs\InstallInsightfaceJob;
 use OCA\Recognize\BackgroundJobs\SchedulerJob;
 use OCA\Recognize\BackgroundJobs\StorageCrawlJob;
 use OCA\Recognize\Db\FaceClusterMapper;
 use OCA\Recognize\Db\FaceDetectionMapper;
 use OCA\Recognize\Migration\InstallDeps;
 use OCA\Recognize\Service\ErrorLog;
+use OCA\Recognize\Service\FaceBackend;
+use OCA\Recognize\Service\FaceBackendSwitcher;
 use OCA\Recognize\Service\FaceClusterMerger;
+use OCA\Recognize\Service\FaceNameSnapshot;
+use OCA\Recognize\Service\InsightfaceInstaller;
 use OCA\Recognize\Service\QueueService;
 use OCA\Recognize\Service\SettingsService;
 use OCA\Recognize\Service\TagManager;
@@ -52,9 +57,17 @@ final class AdminController extends Controller {
 	private TensorflowCheck $tensorflowCheck;
 	private FaceClusterMerger $clusterMerger;
 	private InstallDeps $installDeps;
+	private FaceBackend $faceBackend;
+	private FaceBackendSwitcher $faceBackendSwitcher;
+	private InsightfaceInstaller $insightfaceInstaller;
+	private FaceNameSnapshot $faceNameSnapshot;
 
-	public function __construct(string $appName, IRequest $request, TagManager $tagManager, IJobList $jobList, SettingsService $settingsService, QueueService $queue, FaceClusterMapper $clusterMapper, FaceDetectionMapper $detectionMapper, IAppConfig $config, FaceDetectionMapper $faceDetections, IBinaryFinder $binaryFinder, ErrorLog $errorLog, TensorflowCheck $tensorflowCheck, FaceClusterMerger $clusterMerger, InstallDeps $installDeps) {
+	public function __construct(string $appName, IRequest $request, TagManager $tagManager, IJobList $jobList, SettingsService $settingsService, QueueService $queue, FaceClusterMapper $clusterMapper, FaceDetectionMapper $detectionMapper, IAppConfig $config, FaceDetectionMapper $faceDetections, IBinaryFinder $binaryFinder, ErrorLog $errorLog, TensorflowCheck $tensorflowCheck, FaceClusterMerger $clusterMerger, InstallDeps $installDeps, FaceBackend $faceBackend, FaceBackendSwitcher $faceBackendSwitcher, InsightfaceInstaller $insightfaceInstaller, FaceNameSnapshot $faceNameSnapshot) {
 		parent::__construct($appName, $request);
+		$this->faceBackend = $faceBackend;
+		$this->faceBackendSwitcher = $faceBackendSwitcher;
+		$this->insightfaceInstaller = $insightfaceInstaller;
+		$this->faceNameSnapshot = $faceNameSnapshot;
 		$this->errorLog = $errorLog;
 		$this->tensorflowCheck = $tensorflowCheck;
 		$this->clusterMerger = $clusterMerger;
@@ -319,12 +332,55 @@ final class AdminController extends Controller {
 	}
 
 	/**
+	 * Which face backend is active, whether InsightFace is installed, and the state of a UI-triggered installation.
+	 */
+	public function faceBackendStatus(bool $refresh = false): JSONResponse {
+		$log = null;
+		try {
+			$log = json_decode($this->settingsService->getRawSetting(InsightfaceInstaller::LOG_SETTING, ''), true, 512, JSON_THROW_ON_ERROR);
+		} catch (\Throwable $e) {
+		}
+		return new JSONResponse([
+			'backend' => $this->faceBackend->getName(),
+			'backends' => array_keys(FaceBackend::PARAMS),
+			'params' => $this->faceBackend->getParams(),
+			'insightface' => $this->insightfaceInstaller->check($refresh),
+			'install' => is_array($log) ? $log : null,
+			'installScheduled' => $this->jobList->has(InstallInsightfaceJob::class, null) || $this->jobList->has(InstallInsightfaceJob::class, ['gpu' => true]) || $this->jobList->has(InstallInsightfaceJob::class, ['gpu' => false]),
+			'pendingNameSnapshot' => $this->faceNameSnapshot->getPendingPath(),
+		]);
+	}
+
+	/**
+	 * Switch the face backend: saves the person names, drops all detections/clusters and schedules a new crawl.
+	 */
+	public function switchFaceBackend(string $backend): JSONResponse {
+		try {
+			$result = $this->faceBackendSwitcher->switchTo($backend);
+		} catch (\InvalidArgumentException $e) {
+			return new JSONResponse(['message' => $e->getMessage()], Http::STATUS_BAD_REQUEST);
+		} catch (\Throwable $e) {
+			return new JSONResponse(['message' => $e->getMessage()], Http::STATUS_INTERNAL_SERVER_ERROR);
+		}
+		return new JSONResponse($result);
+	}
+
+	/**
+	 * Install the InsightFace Python environment in a background job (runs with the next cron execution).
+	 */
+	public function installInsightface(bool $gpu = true): JSONResponse {
+		$this->settingsService->setRawSetting(InsightfaceInstaller::LOG_SETTING, json_encode(['running' => true, 'lines' => ['Installation scheduled, waiting for the next background job run (cron)…']]));
+		$this->jobList->add(InstallInsightfaceJob::class, ['gpu' => $gpu]);
+		return new JSONResponse(['scheduled' => true]);
+	}
+
+	/**
 	 * Dry run of the automatic cluster merge for every user with face detections.
 	 */
 	public function mergeSuggestions(): JSONResponse {
 		$threshold = $this->clusterMerger->getConfiguredThreshold();
 		if ($threshold <= 0) {
-			$threshold = FaceClusterMerger::DEFAULT_THRESHOLD;
+			$threshold = $this->clusterMerger->getDefaultThreshold();
 		}
 		try {
 			$users = [];
@@ -340,7 +396,7 @@ final class AdminController extends Controller {
 	public function autoMerge(): JSONResponse {
 		$threshold = $this->clusterMerger->getConfiguredThreshold();
 		if ($threshold <= 0) {
-			$threshold = FaceClusterMerger::DEFAULT_THRESHOLD;
+			$threshold = $this->clusterMerger->getDefaultThreshold();
 		}
 		try {
 			$users = [];
