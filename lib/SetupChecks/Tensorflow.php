@@ -54,6 +54,17 @@ final class Tensorflow implements ISetupCheck {
 			});
 		}
 
+		if (TensorflowCheck::currentContext() === 'web' && TensorflowCheck::looksLikeDeviceSandbox($result)) {
+			$cli = $this->tensorflowCheck->getLastCliResult();
+			if ($cli !== null && $cli['ok'] && $cli['mode'] === TensorflowCheck::MODE_GPU && time() - $cli['checkedAt'] < 7 * 24 * 3600) {
+				return SetupResult::success($this->l10n->t('TensorFlow is running on the GPU (verified from a terminal/cron process; the web server process itself cannot see the GPU device, which is fine for background jobs).'));
+			}
+			return SetupResult::warning(
+				$this->l10n->t('The web server process cannot see any NVIDIA GPU device (/dev/nvidia0). This is usually caused by the PHP-FPM systemd unit running with PrivateDevices=yes and does not affect background jobs started by cron. Verify from a terminal with "occ setupchecks" (that result is then shown here), or add a systemd drop-in for the PHP-FPM service with "PrivateDevices=no" to make the GPU visible to the web server as well.'),
+				self::GPU_DOC
+			);
+		}
+
 		$missing = $result['missingLibraries'];
 		$missingText = count($missing) > 0
 			? ' ' . $this->l10n->t('Node.js reported these missing shared libraries: %s.', [implode(', ', $missing)])

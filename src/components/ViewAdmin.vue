@@ -420,6 +420,12 @@
 				<NcNoteCard v-if="tensorflow.ok && tensorflow.mode === 'gpu'" show-alert type="success">
 					{{ t('recognize', 'TensorFlow is using the GPU.') }}
 				</NcNoteCard>
+				<NcNoteCard v-else-if="tensorflow.deviceSandbox && tensorflow.cli && tensorflow.cli.ok && tensorflow.cli.mode === 'gpu'" show-alert type="success">
+					{{ t('recognize', 'TensorFlow is using the GPU (verified from a terminal/cron process on {date}). The web server process itself cannot see the GPU device, which does not affect the background jobs.', { date: showDate(tensorflow.cli.checkedAt) }) }}
+				</NcNoteCard>
+				<NcNoteCard v-else-if="tensorflow.deviceSandbox" type="warning">
+					{{ t('recognize', 'The web server process cannot see any NVIDIA GPU device (/dev/nvidia0). This is usually caused by the PHP-FPM systemd unit running with PrivateDevices=yes and does not affect background jobs started by cron. Verify from a terminal with "occ setupchecks" (the result will be shown here), or add a systemd drop-in for the PHP-FPM service with "PrivateDevices=no".') }}
+				</NcNoteCard>
 				<NcNoteCard v-else-if="tensorflow.mode === 'gpu'" type="warning">
 					{{ t('recognize', 'GPU mode is enabled but TensorFlow cannot use the GPU, so classification silently runs on the CPU.') }}
 					<span v-if="tensorflow.missingLibraries && tensorflow.missingLibraries.length">{{ t('recognize', 'Node.js could not load these shared libraries: {libraries}.', { libraries: tensorflow.missingLibraries.join(', ') }) }}</span>

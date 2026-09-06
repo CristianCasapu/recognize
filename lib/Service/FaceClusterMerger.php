@@ -27,7 +27,8 @@ final class FaceClusterMerger {
 	public const DEFAULT_THRESHOLD = 0.4;
 	/** The second-closest named cluster must be at least this much farther away than the closest one */
 	public const AMBIGUITY_MARGIN = 0.08;
-	public const SAMPLE_SIZE = 60;
+	/** Detections per cluster used for the centroid; taken deterministically so distances are stable between runs */
+	public const SAMPLE_SIZE = 300;
 	public const MIN_CLUSTER_SIZE = 2;
 
 	private ?Euclidean $distance = null;
@@ -75,7 +76,7 @@ final class FaceClusterMerger {
 
 		$candidates = [];
 		foreach ($unnamed as $cluster) {
-			$sample = $this->faceDetections->findClusterSample($cluster->getId(), self::SAMPLE_SIZE);
+			$sample = $this->faceDetections->findByClusterIdLimited($cluster->getId(), self::SAMPLE_SIZE);
 			if (count($sample) < self::MIN_CLUSTER_SIZE) {
 				continue;
 			}
@@ -139,7 +140,7 @@ final class FaceClusterMerger {
 	 * @throws \OCP\DB\Exception
 	 */
 	private function getCentroid(FaceCluster $cluster): ?array {
-		$sample = $this->faceDetections->findClusterSample($cluster->getId(), self::SAMPLE_SIZE);
+		$sample = $this->faceDetections->findByClusterIdLimited($cluster->getId(), self::SAMPLE_SIZE);
 		if (count($sample) === 0) {
 			return null;
 		}

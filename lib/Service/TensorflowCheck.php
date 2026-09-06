@@ -17,6 +17,7 @@ use Symfony\Component\Process\Process;
  * libtensorflow takes a few seconds and setup checks run on every admin overview load.
  */
 final class TensorflowCheck {
+	/** Suffixed with the PHP SAPI: the web server process is often sandboxed (systemd PrivateDevices) and cannot see the GPU */
 	public const CACHE_KEY = 'tensorflow.checkCache';
 	public const CACHE_TTL = 3600;
 	public const TIMEOUT = 120;
@@ -57,14 +58,44 @@ final class TensorflowCheck {
 	public function run(bool $force = false): array {
 		$mode = $this->getConfiguredMode();
 		if (!$force) {
-			$cached = $this->getCached();
+			$cached = $this->getCached(self::currentContext());
 			if ($cached !== null && $cached['mode'] === $mode && time() - $cached['checkedAt'] < self::CACHE_TTL) {
 				return $cached;
 			}
 		}
 		$result = $this->test($mode);
-		$this->settingsService->setRawSetting(self::CACHE_KEY, json_encode($result, JSON_THROW_ON_ERROR));
+		$this->settingsService->setRawSetting(self::CACHE_KEY . '.' . self::currentContext(), json_encode($result, JSON_THROW_ON_ERROR));
 		return $result;
+	}
+
+	/**
+	 * 'cli' for occ/cron, 'web' for requests handled by the web server.
+	 */
+	public static function currentContext(): string {
+		return PHP_SAPI === 'cli' ? 'cli' : 'web';
+	}
+
+	/**
+	 * The last result obtained from a CLI process (occ, cron). Background jobs run in that
+	 * context, so this is the result that matters when the web server cannot see the GPU.
+	 *
+	 * @return array{mode:string, ok:bool, missingLibraries:list<string>, output:string, checkedAt:int}|null
+	 */
+	public function getLastCliResult(): ?array {
+		return $this->getCached('cli');
+	}
+
+	/**
+	 * Whether the failed check most likely failed only because the web server process is
+	 * sandboxed away from the GPU device (systemd PrivateDevices=yes), not because CUDA is missing.
+	 *
+	 * @param array{mode:string, ok:bool, missingLibraries:list<string>, output:string, checkedAt:int} $result
+	 */
+	public static function looksLikeDeviceSandbox(array $result): bool {
+		return !$result['ok']
+			&& $result['mode'] === self::MODE_GPU
+			&& count($result['missingLibraries']) === 0
+			&& (str_contains($result['output'], 'does not exist') || str_contains($result['output'], 'CUDA_ERROR_NO_DEVICE'));
 	}
 
 	/**
@@ -113,9 +144,9 @@ final class TensorflowCheck {
 	/**
 	 * @return array{mode:string, ok:bool, missingLibraries:list<string>, output:string, checkedAt:int}|null
 	 */
-	private function getCached(): ?array {
+	private function getCached(string $context): ?array {
 		try {
-			$cached = json_decode($this->settingsService->getRawSetting(self::CACHE_KEY, ''), true, 512, JSON_THROW_ON_ERROR);
+			$cached = json_decode($this->settingsService->getRawSetting(self::CACHE_KEY . '.' . $context, ''), true, 512, JSON_THROW_ON_ERROR);
 		} catch (\Throwable $e) {
 			return null;
 		}

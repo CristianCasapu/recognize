@@ -319,6 +319,23 @@ final class FaceDetectionMapper extends QBMapper {
 	}
 
 	/**
+	 * Deterministic subset of a cluster (oldest detections first), e.g. for centroid computations
+	 * that must not jitter between runs the way a random sample does.
+	 *
+	 * @return list<FaceDetection>
+	 * @throws \OCP\DB\Exception
+	 */
+	public function findByClusterIdLimited(int $clusterId, int $limit): array {
+		$qb = $this->db->getQueryBuilder();
+		$qb->select(FaceDetection::$columns)
+			->from('recognize_face_detections')
+			->where($qb->expr()->eq('cluster_id', $qb->createPositionalParameter($clusterId, IQueryBuilder::PARAM_INT)))
+			->orderBy('id', 'ASC')
+			->setMaxResults($limit);
+		return $this->findEntities($qb);
+	}
+
+	/**
 	 * @throws \OCP\DB\Exception
 	 */
 	public function countByClusterId(int $clusterId): int {

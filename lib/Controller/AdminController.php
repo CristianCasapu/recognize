@@ -269,7 +269,10 @@ final class AdminController extends Controller {
 	 * Fresh smoke test of the configured TensorFlow mode, with diagnostics (missing libraries, Node.js output).
 	 */
 	public function tensorflowStatus(): JSONResponse {
-		return new JSONResponse($this->tensorflowCheck->run(true));
+		$result = $this->tensorflowCheck->run(true);
+		$result['deviceSandbox'] = TensorflowCheck::looksLikeDeviceSandbox($result);
+		$result['cli'] = $this->tensorflowCheck->getLastCliResult();
+		return new JSONResponse($result);
 	}
 
 	public function errors(): JSONResponse {
