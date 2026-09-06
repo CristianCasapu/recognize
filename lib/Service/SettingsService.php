@@ -53,6 +53,19 @@ final class SettingsService {
 		'nice_value' => '0',
 		'concurrency.enabled' => 'false',
 		'ffmpeg_binary' => '',
+		// Face detection: size of the downscaled image handed to the detector (1024, 2048 or 4096).
+		// The detector itself works on 512px, so larger previews mainly improve descriptor quality.
+		'faces.previewDimension' => '1024',
+		// Additionally run the detector on overlapping tiles so that small faces get found
+		'faces.tiling' => 'false',
+		// Faces smaller than this fraction of the image are not clustered (unreliable descriptors)
+		'faces.minDetectionSize' => '0.03',
+		// Merge unnamed clusters into a named one when their centroids are closer than this (0 = off)
+		'faces.autoMergeThreshold' => '0',
+		// Extra library path for the Node.js classifier processes (e.g. where CUDA/cuDNN live)
+		'tensorflow.ldLibraryPath' => '',
+		// Notify admins via Nextcloud notifications when jobs fail
+		'notifications.enabled' => 'true',
 	];
 
 	/** @var array<string,string>  */
@@ -86,7 +99,13 @@ final class SettingsService {
 		'landmarks.batchSize',
 		'movinet.batchSize',
 		'musicnn.batchSize',
-		'concurrency.enabled'
+		'concurrency.enabled',
+		'faces.previewDimension',
+		'faces.tiling',
+		'faces.minDetectionSize',
+		'faces.autoMergeThreshold',
+		'tensorflow.ldLibraryPath',
+		'notifications.enabled',
 	];
 
 	private IAppConfig $config;
@@ -149,6 +168,43 @@ final class SettingsService {
 			$lazy = true;
 		}
 		$this->config->setAppValueString($key, $value, lazy: $lazy);
+	}
+
+	/**
+	 * Read an internal app config value that is not a user-facing setting
+	 * (caches, notification throttles, the error log).
+	 */
+	public function getRawSetting(string $key, string $default = ''): string {
+		return $this->config->getAppValueString($key, $default, lazy: true);
+	}
+
+	public function setRawSetting(string $key, string $value): void {
+		$this->config->setAppValueString($key, $value, lazy: true);
+	}
+
+	/**
+	 * Environment variables for the Node.js classifier processes and the TensorFlow smoke tests.
+	 *
+	 * @return array<string,string>
+	 */
+	public function getClassifierEnvironment(): array {
+		$env = [];
+		if ($this->getSetting('tensorflow.gpu') === 'true') {
+			$env['RECOGNIZE_GPU'] = 'true';
+		}
+		if ($this->getSetting('tensorflow.purejs') === 'true') {
+			$env['RECOGNIZE_PUREJS'] = 'true';
+		}
+		$cores = $this->getSetting('tensorflow.cores');
+		if ($cores !== '0') {
+			$env['RECOGNIZE_CORES'] = $cores;
+		}
+		$ldLibraryPath = trim($this->getSetting('tensorflow.ldLibraryPath'));
+		if ($ldLibraryPath !== '') {
+			$existing = getenv('LD_LIBRARY_PATH');
+			$env['LD_LIBRARY_PATH'] = is_string($existing) && $existing !== '' ? $ldLibraryPath . ':' . $existing : $ldLibraryPath;
+		}
+		return $env;
 	}
 
 	/**

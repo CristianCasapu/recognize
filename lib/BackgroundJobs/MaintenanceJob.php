@@ -12,13 +12,13 @@ use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\BackgroundJob\IJobList;
 use OCP\BackgroundJob\TimedJob;
 use OCP\DB\Exception;
-use Psr\Log\LoggerInterface;
+use OCA\Recognize\Service\Logger;
 
 final class MaintenanceJob extends TimedJob {
 
 	public function __construct(
 		ITimeFactory $time,
-		private LoggerInterface $logger,
+		private Logger $logger,
 		private IJobList $jobList,
 		private FaceDetectionMapper $faceDetectionMapper,
 	) {

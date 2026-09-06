@@ -28,13 +28,13 @@ use OCP\Files\IRootFolder;
 use OCP\Files\Node;
 use OCP\Files\NotFoundException;
 use OCP\Files\NotPermittedException;
-use Psr\Log\LoggerInterface;
+use OCA\Recognize\Service\Logger;
 
 final class FsActionService {
 	public const BATCH_SIZE = 1000;
 	public function __construct(
 		private FsActionMapper      $fsActionMapper,
-		private LoggerInterface     $logger,
+		private Logger     $logger,
 		private StorageService      $storageService,
 		private IUserMountCache     $userMountCache,
 		private IJobList            $jobList,

@@ -41,5 +41,11 @@ return [
 		['name' => 'admin#hasJobs', 'url' => '/admin/jobs/{task}', 'verb' => 'GET'],
 		['name' => 'admin#get_setting', 'url' => '/admin/settings/{setting}', 'verb' => 'GET'],
 		['name' => 'admin#set_setting', 'url' => '/admin/settings/{setting}', 'verb' => 'PUT'],
+		['name' => 'admin#errors', 'url' => '/admin/errors', 'verb' => 'GET'],
+		['name' => 'admin#clearErrors', 'url' => '/admin/errors', 'verb' => 'DELETE'],
+		['name' => 'admin#tensorflowStatus', 'url' => '/admin/tensorflow', 'verb' => 'GET'],
+		['name' => 'admin#installDeps', 'url' => '/admin/installDeps', 'verb' => 'POST'],
+		['name' => 'admin#mergeSuggestions', 'url' => '/admin/faces/mergeSuggestions', 'verb' => 'GET'],
+		['name' => 'admin#autoMerge', 'url' => '/admin/faces/autoMerge', 'verb' => 'POST'],
 	],
 ];

@@ -10,12 +10,18 @@ namespace OCA\Recognize\Service;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
+/**
+ * Wraps the Nextcloud logger: mirrors messages to the CLI when running an occ command
+ * and records warnings and errors in the ErrorLog so admins can see them in the UI.
+ */
 final class Logger implements LoggerInterface {
 	private LoggerInterface $logger;
+	private ErrorLog $errorLog;
 	private ?OutputInterface $cliOutput = null;
 
-	public function __construct(LoggerInterface $logger) {
+	public function __construct(LoggerInterface $logger, ErrorLog $errorLog) {
 		$this->logger = $logger;
+		$this->errorLog = $errorLog;
 	}
 
 	/**
@@ -27,7 +33,6 @@ final class Logger implements LoggerInterface {
 		return $this;
 	}
 
-
 	/**
 	 * @inheritDoc
 	 */
@@ -35,6 +40,7 @@ final class Logger implements LoggerInterface {
 		if (isset($this->cliOutput)) {
 			$this->cliOutput->writeln((string)$message);
 		}
+		$this->errorLog->record('emergency', (string)$message, $context);
 		$this->logger->emergency((string)$message, $context);
 	}
 
@@ -45,6 +51,7 @@ final class Logger implements LoggerInterface {
 		if (isset($this->cliOutput)) {
 			$this->cliOutput->writeln((string)$message);
 		}
+		$this->errorLog->record('alert', (string)$message, $context);
 		$this->logger->alert((string)$message, $context);
 	}
 
@@ -55,6 +62,7 @@ final class Logger implements LoggerInterface {
 		if (isset($this->cliOutput)) {
 			$this->cliOutput->writeln((string)$message);
 		}
+		$this->errorLog->record('critical', (string)$message, $context);
 		$this->logger->critical((string)$message, $context);
 	}
 
@@ -65,6 +73,7 @@ final class Logger implements LoggerInterface {
 		if (isset($this->cliOutput)) {
 			$this->cliOutput->writeln((string)$message);
 		}
+		$this->errorLog->record('error', (string)$message, $context);
 		$this->logger->error((string)$message, $context);
 	}
 
@@ -75,6 +84,7 @@ final class Logger implements LoggerInterface {
 		if (isset($this->cliOutput)) {
 			$this->cliOutput->writeln((string)$message);
 		}
+		$this->errorLog->record('warning', (string)$message, $context);
 		$this->logger->warning((string)$message, $context);
 	}
 
@@ -114,6 +124,9 @@ final class Logger implements LoggerInterface {
 	public function log($level, string|\Stringable $message, array $context = array()): void {
 		if (isset($this->cliOutput)) {
 			$this->cliOutput->writeln((string)$message);
+		}
+		if (in_array($level, ['emergency', 'alert', 'critical', 'error', 'warning'], true)) {
+			$this->errorLog->record((string)$level, (string)$message, $context);
 		}
 		$this->logger->log($level, (string)$message, $context);
 	}

@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - CristianCasapu fork
+
+### Added
+
+- feat: Recent errors and warnings are shown in the admin settings and Nextcloud setup checks (Administration › Overview, `occ setupchecks`); admins get a notification when a classification or clustering job fails
+- feat: Setup checks for Node.js, TensorFlow/GPU (reports missing CUDA/cuDNN libraries with install instructions), models, cron, queue health and disk space
+- feat: "Re-install dependencies" button in the admin settings
+- feat(faces): Tiled face detection (`faces.tiling`) and configurable preview size (`faces.previewDimension`) to find small faces; configurable minimum face size for clustering (`faces.minDetectionSize`)
+- feat(faces): Automatic merging of unnamed clusters into the named cluster of the same person (`faces.autoMergeThreshold`, `occ recognize:merge-clusters`)
+- feat(faces): `occ recognize:rescan-faces` re-scans photos and adds newly found faces without touching existing detections and named clusters
+- feat: `tensorflow.ldLibraryPath` setting to point the classifier processes at CUDA/cuDNN libraries
+
 ## [12.0.2] - 2026-08-26
 
 ### Fixed

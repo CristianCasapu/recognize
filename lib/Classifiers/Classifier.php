@@ -13,6 +13,7 @@ use OCA\Recognize\Classifiers\Images\LandmarksClassifier;
 use OCA\Recognize\Constants;
 use OCA\Recognize\Db\QueueFile;
 use OCA\Recognize\Service\QueueService;
+use OCA\Recognize\Service\SettingsService;
 use OCP\AppFramework\Services\IAppConfig;
 use OCP\DB\Exception;
 use OCP\Encryption\Exceptions\GenericEncryptionException;
@@ -41,6 +42,7 @@ abstract class Classifier {
 	private ITempManager $tempManager;
 	private IPreview $previewProvider;
 	private int $maxExecutionTime = self::MAX_EXECUTION_TIME;
+	private ?SettingsService $settingsService = null;
 
 	public function __construct(LoggerInterface $logger, IAppConfig $config, IRootFolder $rootFolder, QueueService $queue, ITempManager $tempManager, IPreview  $previewProvider) {
 		$this->logger = $logger;
@@ -53,6 +55,29 @@ abstract class Classifier {
 
 	public function setMaxExecutionTime(int $time): void {
 		$this->maxExecutionTime = $time;
+	}
+
+	/**
+	 * Resolved lazily so that the constructor signature shared by all classifiers stays unchanged.
+	 */
+	protected function getSettingsService(): SettingsService {
+		return $this->settingsService ??= \OCP\Server::get(SettingsService::class);
+	}
+
+	/**
+	 * Longest side of the downscaled copy of an image that is handed to the classifier process.
+	 */
+	protected function getTempFileDimension(): int {
+		return self::TEMP_FILE_DIMENSION;
+	}
+
+	/**
+	 * Additional environment variables for this classifier's Node.js process.
+	 *
+	 * @return array<string,string>
+	 */
+	protected function getExtraEnvironment(): array {
+		return [];
 	}
 
 	/**
@@ -117,8 +142,9 @@ abstract class Classifier {
 						}
 					}
 					// Check file dimensions
+					$maxDimension = $this->getTempFileDimension();
 					$dimensions = @getimagesize($path);
-					if (isset($dimensions) && $dimensions !== false && ($dimensions[0] > 1024 || $dimensions[1] > 1024)) {
+					if (isset($dimensions) && $dimensions !== false && ($dimensions[0] > $maxDimension || $dimensions[1] > $maxDimension)) {
 						$this->logger->debug('File dimensions are too large for classifier: ' . $file->getPath());
 						try {
 							$this->logger->debug('removing ' . $queueFile->getFileId() . ' from ' . $model . ' queue');
@@ -175,18 +201,9 @@ abstract class Classifier {
 		$this->logger->debug('Running '.var_export($command, true));
 
 		$proc = new Process($command, __DIR__);
-		$env = [];
-		if ($this->config->getAppValueString('tensorflow.gpu', 'false') === 'true') {
-			$env['RECOGNIZE_GPU'] = 'true';
-		}
-		if ($this->config->getAppValueString('tensorflow.purejs', 'false', lazy: true) === 'true') {
-			$env['RECOGNIZE_PUREJS'] = 'true';
-		}
-		// Set cores
+		// RECOGNIZE_GPU / RECOGNIZE_PUREJS / RECOGNIZE_CORES / LD_LIBRARY_PATH plus classifier specific variables
+		$env = array_merge($this->getSettingsService()->getClassifierEnvironment(), $this->getExtraEnvironment());
 		$cores = $this->config->getAppValueString('tensorflow.cores', '0');
-		if ($cores !== '0') {
-			$env['RECOGNIZE_CORES'] = $cores;
-		}
 		$proc->setEnv($env);
 		$proc->setTimeout(count($paths) * $timeout);
 		$proc->setInput(implode("\n", $paths));
@@ -289,23 +306,23 @@ abstract class Classifier {
 
 		if ($this->previewProvider->isAvailable($file)) {
 			try {
-				$this->logger->debug('generating preview of ' . $file->getId() . ' with dimension ' . self::TEMP_FILE_DIMENSION . ' using nextcloud preview manager');
+				$this->logger->debug('generating preview of ' . $file->getId() . ' with dimension ' . $this->getTempFileDimension() . ' using nextcloud preview manager');
 				return $this->generatePreviewWithProvider($file);
 			} catch (\Throwable $e) {
-				$this->logger->warning('Failed to generate preview of ' . $file->getId() . ' with dimension ' . self::TEMP_FILE_DIMENSION . ' with nextcloud preview manager: ' . $e->getMessage());
+				$this->logger->warning('Failed to generate preview of ' . $file->getId() . ' with dimension ' . $this->getTempFileDimension() . ' with nextcloud preview manager: ' . $e->getMessage());
 			}
 		}
 
 		try {
 			$imageType = exif_imagetype($path);
 			if ($imageType > 0) {
-				$this->logger->debug('generating preview of ' . $file->getId() . ' with dimension ' . self::TEMP_FILE_DIMENSION . ' using gdlib');
+				$this->logger->debug('generating preview of ' . $file->getId() . ' with dimension ' . $this->getTempFileDimension() . ' using gdlib');
 				return $this->generatePreviewWithGD($path);
 			}
 
 			return $path;
 		} catch (\Throwable $e) {
-			$this->logger->warning('Failed to generate preview of ' . $file->getId() . ' with dimension ' . self::TEMP_FILE_DIMENSION . ' with gdlib: ' . $e->getMessage());
+			$this->logger->warning('Failed to generate preview of ' . $file->getId() . ' with dimension ' . $this->getTempFileDimension() . ' with gdlib: ' . $e->getMessage());
 			return $path;
 		}
 	}
@@ -320,7 +337,7 @@ abstract class Classifier {
 	 * @throws \OCA\Recognize\Exception\Exception|NotFoundException
 	 */
 	public function generatePreviewWithProvider(File $file): string {
-		$image = $this->previewProvider->getPreview($file, self::TEMP_FILE_DIMENSION, self::TEMP_FILE_DIMENSION);
+		$image = $this->previewProvider->getPreview($file, $this->getTempFileDimension(), $this->getTempFileDimension());
 
 		try {
 			$preview = $image->read();
@@ -396,8 +413,8 @@ abstract class Classifier {
 			throw new \OCA\Recognize\Exception\Exception('Could not get image dimensions for preview with gdlib');
 		}
 
-		$maxWidth = (float) self::TEMP_FILE_DIMENSION;
-		$maxHeight = (float) self::TEMP_FILE_DIMENSION;
+		$maxWidth = (float) $this->getTempFileDimension();
+		$maxHeight = (float) $this->getTempFileDimension();
 
 		if ($width > $maxWidth || $height > $maxHeight) {
 			$aspectRatio = (float) ($width / $height);

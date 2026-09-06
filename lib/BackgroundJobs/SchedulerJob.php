@@ -17,7 +17,6 @@ use OCA\Recognize\Service\StorageService;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\BackgroundJob\IJobList;
 use OCP\BackgroundJob\QueuedJob;
-use Psr\Log\LoggerInterface;
 
 final class SchedulerJob extends QueuedJob {
 	public const INTERVAL = 30 * 60; // 30 minutes
@@ -33,7 +32,7 @@ final class SchedulerJob extends QueuedJob {
 		'OC\Files\Mount\ObjectHomeMountProvider',
 	];
 
-	private LoggerInterface $logger;
+	private Logger $logger;
 	private IJobList $jobList;
 	private StorageService $storageService;
 

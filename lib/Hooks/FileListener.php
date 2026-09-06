@@ -29,7 +29,7 @@ use OCP\Files\InvalidPathException;
 use OCP\Files\IRootFolder;
 use OCP\Files\Node;
 use OCP\Files\NotFoundException;
-use Psr\Log\LoggerInterface;
+use OCA\Recognize\Service\Logger;
 
 /**
  * @template-implements IEventListener<Event>
@@ -45,7 +45,7 @@ final class FileListener implements IEventListener {
 	private array $addedMounts = [];
 
 	public function __construct(
-		private LoggerInterface     $logger,
+		private Logger     $logger,
 		private IgnoreService       $ignoreService,
 		private IRootFolder         $rootFolder,
 		private IUserMountCache     $userMountCache,

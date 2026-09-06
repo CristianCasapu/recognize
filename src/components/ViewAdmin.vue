@@ -27,6 +27,35 @@
 			<NcNoteCard v-if="cron !== undefined && cron !== 'cron'" type="error">
 				{{ t('recognize', 'Background Jobs are not executed via cron. Recognize requires background jobs to be executed via cron.') }}
 			</NcNoteCard>
+			<NcNoteCard v-if="errors.length" type="error">
+				{{ t('recognize', 'Recent errors and warnings (newest first). Setup problems are also listed under Administration settings › Overview, and admins receive a notification when a background job fails.') }}
+				<ul class="recognize-errors">
+					<li v-for="(entry, index) in errors" :key="index">
+						<code>{{ showDate(entry.time) }}</code> <strong>{{ entry.level }}</strong>: {{ entry.message }}<span v-if="entry.detail"> — {{ entry.detail }}</span><span v-if="entry.count > 1"> (×{{ entry.count }})</span>
+					</li>
+				</ul>
+				<button class="button" @click="clearErrors">
+					{{ t('recognize', 'Clear error list') }}
+				</button>
+			</NcNoteCard>
+			<NcNoteCard v-else show-alert type="success">
+				{{ t('recognize', 'No recent errors or warnings.') }}
+			</NcNoteCard>
+			<p>
+				<NcCheckboxRadioSwitch :checked.sync="settings['notifications.enabled']" type="switch" @update:checked="onChange">
+					{{ t('recognize', 'Notify administrators (Nextcloud notification) when a classification or clustering job fails') }}
+				</NcCheckboxRadioSwitch>
+			</p>
+			<p>{{ t('recognize', 'If Node.js, libtensorflow or FFmpeg are missing (see below), you can re-run the dependency installation here. Libraries that need root access (CUDA, cuDNN) have to be installed on the server, see the GPU section.') }}</p>
+			<button class="button" :disabled="installBusy" @click="onInstallDeps">
+				<span v-if="installBusy" class="icon-loading-small" />
+				{{ t('recognize', 'Re-install dependencies (Node.js, libtensorflow, FFmpeg)') }}
+			</button>
+			<ul v-if="installMessages.length" class="recognize-errors">
+				<li v-for="(message, index) in installMessages" :key="index">
+					{{ message }}
+				</li>
+			</ul>
 			<template v-if="nodejs && (libtensorflow || wasmtensorflow) && cron === 'cron'">
 				<template v-if="settings['faces.enabled'] || settings['imagenet.enabled'] || settings['musicnn.enabled'] || settings['movinet.enabled']">
 					<NcNoteCard show-alert type="success">
@@ -71,6 +100,105 @@
 					:title="t('recognize', 'The number of files to process per job run (A job will be scheduled every 5 minutes; For normal operation ~500 or more, in WASM mode ~50 is recommended)')"
 					@update:value="onChange" />
 			</p>
+			<p>&nbsp;</p>
+			<h3>{{ t('recognize', 'Small faces') }}</h3>
+			<p>{{ t('recognize', 'The face detector looks at a 512px copy of each image, so faces that are small in the picture (group photos, people in the background) are not found. With tiling enabled the detector additionally scans overlapping quarters of the image (4 extra passes per image, fast on a GPU). A larger preview improves the quality of the face descriptors of small faces. Files that were already processed are not scanned again automatically; use "Reset faces for classified files" and "Rescan all files" below to apply the new settings to existing photos.') }}</p>
+			<p>
+				<NcCheckboxRadioSwitch :checked.sync="settings['faces.tiling']"
+					:disabled="!settings['faces.enabled']"
+					type="switch"
+					@update:checked="onChange">
+					{{ t('recognize', 'Also scan image tiles to find small faces') }}
+				</NcCheckboxRadioSwitch>
+			</p>
+			<p>
+				<label for="recognize-preview-dimension">{{ t('recognize', 'Size of the image copy handed to the face detector (pixels, longest side)') }}</label><br>
+				<select id="recognize-preview-dimension"
+					v-model="settings['faces.previewDimension']"
+					:disabled="!settings['faces.enabled']"
+					@change="onChange">
+					<option value="1024">
+						1024 ({{ t('recognize', 'default') }})
+					</option>
+					<option value="2048">
+						2048
+					</option>
+					<option value="4096">
+						4096
+					</option>
+				</select>
+			</p>
+			<p>
+				<NcTextField :disabled="!settings['faces.enabled']"
+					:value.sync="settings['faces.minDetectionSize']"
+					type="number"
+					:min="0.005"
+					:max="0.2"
+					:step="0.005"
+					:label-visible="true"
+					:label="t('recognize', 'Ignore faces smaller than this fraction of the image when clustering (default 0.03; lower it to e.g. 0.015 together with tiling and a 2048px preview)')"
+					@update:value="onChange" />
+			</p>
+			<p>&nbsp;</p>
+			<h3>{{ t('recognize', 'Automatic merging of clusters') }}</h3>
+			<p>{{ t('recognize', 'Clustering runs in batches and never merges two existing clusters, so the same person often ends up as one named and several unnamed clusters. When a threshold above 0 is set, unnamed clusters whose average face is closer than the threshold to a named cluster (and clearly farther from every other named cluster) are merged into it after every clustering run. Distances between different people are usually above 0.45; 0.4 is a safe start. Use "Preview" to see what would be merged with the current threshold before enabling it.') }}</p>
+			<p>
+				<NcTextField :disabled="!settings['faces.enabled']"
+					:value.sync="settings['faces.autoMergeThreshold']"
+					type="number"
+					:min="0"
+					:max="1"
+					:step="0.01"
+					:label-visible="true"
+					:label="t('recognize', 'Maximum centroid distance for automatic merges (0 disables automatic merging)')"
+					@update:value="onChange" />
+			</p>
+			<p>
+				<button class="button" :disabled="mergeBusy || !settings['faces.enabled']" @click="getMergeSuggestions">
+					{{ t('recognize', 'Preview merge candidates') }}
+				</button>
+				<button class="button" :disabled="mergeBusy || !settings['faces.enabled']" @click="onAutoMerge">
+					{{ t('recognize', 'Merge now') }}
+				</button>
+				<span v-if="mergeBusy" class="icon-loading-small" />
+			</p>
+			<NcNoteCard v-if="mergeResult" type="success">
+				{{ t('recognize', 'Merged {count} cluster(s) with threshold {threshold}.', { count: mergeCandidates(mergeResult).length, threshold: mergeResult.threshold }) }}
+				<ul class="recognize-errors">
+					<li v-for="merged in mergeCandidates(mergeResult)" :key="merged.user + '-' + merged.clusterId">
+						{{ t('recognize', 'cluster #{cluster} ({size} faces) → {target} (distance {distance})', { cluster: merged.clusterId, size: merged.size, target: merged.targetTitle, distance: merged.distance }) }}
+					</li>
+				</ul>
+			</NcNoteCard>
+			<template v-if="mergeSuggestions">
+				<p v-if="!mergeCandidates(mergeSuggestions).length">
+					{{ t('recognize', 'No unnamed clusters with a named counterpart were found.') }}
+				</p>
+				<table v-else class="recognize-table">
+					<thead>
+						<tr>
+							<th>{{ t('recognize', 'User') }}</th>
+							<th>{{ t('recognize', 'Unnamed cluster') }}</th>
+							<th>{{ t('recognize', 'Faces') }}</th>
+							<th>{{ t('recognize', 'Nearest person') }}</th>
+							<th>{{ t('recognize', 'Distance') }}</th>
+							<th>{{ t('recognize', '2nd nearest') }}</th>
+							<th>{{ t('recognize', 'Would merge (threshold {threshold})', { threshold: mergeSuggestions.threshold }) }}</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr v-for="candidate in mergeCandidates(mergeSuggestions)" :key="candidate.user + '-' + candidate.clusterId">
+							<td>{{ candidate.user }}</td>
+							<td>#{{ candidate.clusterId }}</td>
+							<td>{{ candidate.size }}</td>
+							<td>{{ candidate.targetTitle }}</td>
+							<td>{{ candidate.distance }}</td>
+							<td>{{ candidate.secondTitle ? candidate.secondTitle + ' (' + candidate.secondDistance + ')' : '-' }}</td>
+							<td>{{ candidate.mergeable ? t('recognize', 'yes') : t('recognize', 'no') }}</td>
+						</tr>
+					</tbody>
+				</table>
+			</template>
 		</NcSettingsSection>
 		<NcSettingsSection :name="t('recognize', 'Object detection & landmark recognition')">
 			<template v-if="settings['imagenet.enabled']">
@@ -285,6 +413,37 @@
 			<p>
 				<a href="https://github.com/nextcloud/recognize/wiki/GPU-mode">{{ t('recognize', 'Learn how to setup GPU mode with Recognize') }}</a>
 			</p>
+			<p v-if="tensorflow === undefined">
+				<span class="icon-loading-small" />&nbsp;&nbsp;&nbsp;&nbsp;{{ t('recognize', 'Checking TensorFlow') }}
+			</p>
+			<template v-else-if="settings['tensorflow.gpu']">
+				<NcNoteCard v-if="tensorflow.ok && tensorflow.mode === 'gpu'" show-alert type="success">
+					{{ t('recognize', 'TensorFlow is using the GPU.') }}
+				</NcNoteCard>
+				<NcNoteCard v-else-if="tensorflow.mode === 'gpu'" type="warning">
+					{{ t('recognize', 'GPU mode is enabled but TensorFlow cannot use the GPU, so classification silently runs on the CPU.') }}
+					<span v-if="tensorflow.missingLibraries && tensorflow.missingLibraries.length">{{ t('recognize', 'Node.js could not load these shared libraries: {libraries}.', { libraries: tensorflow.missingLibraries.join(', ') }) }}</span>
+					{{ t('recognize', 'TensorFlow 2.9 (used by tfjs-node-gpu 4.x) needs the CUDA 11 runtime libraries (libcudart.so.11.0, libcublas.so.11, libcufft.so.10, libcurand.so.10, libcusolver.so.11, libcusparse.so.11) and cuDNN 8 (libcudnn.so.8). Install them as root on the server, e.g. on Debian/Ubuntu:') }}
+					<pre><code>apt install nvidia-cuda-toolkit nvidia-cudnn   # or the cuda-11-x / libcudnn8 packages from the NVIDIA repository
+ldconfig -p | grep -E 'cudnn|cudart'          # both must be listed</code></pre>
+					{{ t('recognize', 'If the libraries are installed in a directory the dynamic linker does not know, enter that directory below (LD_LIBRARY_PATH for the classifier processes). Then click "Re-check".') }}
+				</NcNoteCard>
+			</template>
+			<p>
+				<NcTextField :value.sync="settings['tensorflow.ldLibraryPath']"
+					:label-visible="true"
+					:label="t('recognize', 'LD_LIBRARY_PATH for the classifier processes (optional, e.g. /usr/local/cuda-11.8/lib64:/opt/cudnn8/lib)')"
+					@update:value="onChange" />
+			</p>
+			<p>
+				<button class="button" @click="getTensorflowStatus">
+					{{ t('recognize', 'Re-check TensorFlow / GPU') }}
+				</button>
+			</p>
+			<details v-if="tensorflow && tensorflow.output">
+				<summary>{{ t('recognize', 'Node.js output of the last check') }}</summary>
+				<pre class="recognize-output">{{ tensorflow.output }}</pre>
+			</details>
 		</NcSettingsSection>
 		<NcSettingsSection :name="t('recognize', 'Node.js')">
 			<p v-if="nodejs === undefined">
@@ -417,9 +576,9 @@ import { generateUrl } from '@nextcloud/router'
 import { loadState } from '@nextcloud/initial-state'
 import humanizeDuration from 'humanize-duration'
 
-const SETTINGS = ['tensorflow.cores', 'tensorflow.gpu', 'tensorflow.purejs', 'imagenet.enabled', 'landmarks.enabled', 'faces.enabled', 'musicnn.enabled', 'movinet.enabled', 'node_binary', 'ffmpeg_binary', 'faces.status', 'imagenet.status', 'landmarks.status', 'movinet.status', 'musicnn.status', 'faces.lastFile', 'imagenet.lastFile', 'landmarks.lastFile', 'movinet.lastFile', 'musicnn.lastFile', 'faces.batchSize', 'imagenet.batchSize', 'landmarks.batchSize', 'movinet.batchSize', 'musicnn.batchSize', 'clusterFaces.status', 'clusterFaces.lastRun', 'nice_binary', 'nice_value', 'concurrency.enabled']
+const SETTINGS = ['tensorflow.cores', 'tensorflow.gpu', 'tensorflow.purejs', 'tensorflow.ldLibraryPath', 'imagenet.enabled', 'landmarks.enabled', 'faces.enabled', 'musicnn.enabled', 'movinet.enabled', 'node_binary', 'ffmpeg_binary', 'faces.status', 'imagenet.status', 'landmarks.status', 'movinet.status', 'musicnn.status', 'faces.lastFile', 'imagenet.lastFile', 'landmarks.lastFile', 'movinet.lastFile', 'musicnn.lastFile', 'faces.batchSize', 'imagenet.batchSize', 'landmarks.batchSize', 'movinet.batchSize', 'musicnn.batchSize', 'faces.previewDimension', 'faces.tiling', 'faces.minDetectionSize', 'faces.autoMergeThreshold', 'clusterFaces.status', 'clusterFaces.lastRun', 'nice_binary', 'nice_value', 'concurrency.enabled', 'notifications.enabled']
 
-const BOOLEAN_SETTINGS = ['tensorflow.gpu', 'tensorflow.purejs', 'imagenet.enabled', 'landmarks.enabled', 'faces.enabled', 'musicnn.enabled', 'movinet.enabled', 'faces.status', 'imagenet.status', 'landmarks.status', 'movinet.status', 'musicnn.status', 'faces.lastFile', 'imagenet.lastFile', 'landmarks.lastFile', 'movinet.lastFile', 'musicnn.lastFile', 'clusterFaces.status', 'concurrency.enabled']
+const BOOLEAN_SETTINGS = ['tensorflow.gpu', 'tensorflow.purejs', 'imagenet.enabled', 'landmarks.enabled', 'faces.enabled', 'musicnn.enabled', 'movinet.enabled', 'faces.status', 'imagenet.status', 'landmarks.status', 'movinet.status', 'musicnn.status', 'faces.lastFile', 'imagenet.lastFile', 'landmarks.lastFile', 'movinet.lastFile', 'musicnn.lastFile', 'clusterFaces.status', 'concurrency.enabled', 'faces.tiling', 'notifications.enabled']
 
 const MAX_RELATIVE_DATE = 1000 * 60 * 60 * 24 * 7 // one week
 
@@ -454,6 +613,13 @@ export default {
 			musicnnJobs: null,
 			clusterFacesJobs: null,
 			tagsEnabled: null,
+			errors: [],
+			tensorflow: undefined,
+			mergeSuggestions: null,
+			mergeResult: null,
+			mergeBusy: false,
+			installBusy: false,
+			installMessages: [],
 		}
 	},
 
@@ -493,6 +659,8 @@ export default {
 		this.getWasmtensorflowStatus()
 		this.getGputensorflowStatus()
 		this.getCronStatus()
+		this.getErrors()
+		this.getTensorflowStatus()
 		this.getJobsStatus('imagenet')
 		this.getJobsStatus('faces')
 		this.getJobsStatus('landmarks')
@@ -502,6 +670,7 @@ export default {
 
 		setInterval(async () => {
 			this.getCount()
+			this.getErrors()
 			this.loadValue('imagenet.status')
 			this.loadValue('faces.status')
 			this.loadValue('landmarks.status')
@@ -641,6 +810,76 @@ export default {
 			const { cron } = resp.data
 			this.cron = cron
 		},
+		async getErrors() {
+			try {
+				const resp = await axios.get(generateUrl('/apps/recognize/admin/errors'))
+				this.errors = resp.data.errors
+			} catch (e) {
+				console.error(e)
+			}
+		},
+		async clearErrors() {
+			await axios.delete(generateUrl('/apps/recognize/admin/errors'))
+			this.errors = []
+		},
+		async getTensorflowStatus() {
+			this.tensorflow = undefined
+			try {
+				const resp = await axios.get(generateUrl('/apps/recognize/admin/tensorflow'))
+				this.tensorflow = resp.data
+			} catch (e) {
+				console.error(e)
+				this.tensorflow = { ok: false, mode: '', missingLibraries: [], output: String(e) }
+			}
+		},
+		async onInstallDeps() {
+			this.installBusy = true
+			this.installMessages = []
+			try {
+				const resp = await axios.post(generateUrl('/apps/recognize/admin/installDeps'))
+				this.installMessages = resp.data.messages
+			} catch (e) {
+				console.error(e)
+				this.installMessages = (e.response && e.response.data && e.response.data.messages) || [String(e)]
+				this.error = this.t('recognize', 'Re-installing the dependencies failed')
+			} finally {
+				this.installBusy = false
+			}
+			this.getNodejsStatus()
+			this.getFfmpegStatus()
+			this.getLibtensorflowStatus()
+			this.getTensorflowStatus()
+		},
+		async getMergeSuggestions() {
+			this.mergeBusy = true
+			this.mergeResult = null
+			try {
+				const resp = await axios.get(generateUrl('/apps/recognize/admin/faces/mergeSuggestions'))
+				this.mergeSuggestions = resp.data
+			} catch (e) {
+				console.error(e)
+				this.error = this.t('recognize', 'Failed to compute merge candidates')
+			} finally {
+				this.mergeBusy = false
+			}
+		},
+		async onAutoMerge() {
+			this.mergeBusy = true
+			try {
+				const resp = await axios.post(generateUrl('/apps/recognize/admin/faces/autoMerge'))
+				this.mergeResult = resp.data
+				this.mergeSuggestions = null
+				this.getCount()
+			} catch (e) {
+				console.error(e)
+				this.error = this.t('recognize', 'Merging clusters failed')
+			} finally {
+				this.mergeBusy = false
+			}
+		},
+		mergeCandidates(suggestions) {
+			return Object.entries(suggestions.users).flatMap(([user, candidates]) => candidates.map(c => ({ user, ...c })))
+		},
 		async getJobsStatus(task) {
 			const resp = await axios.get(generateUrl(`/apps/recognize/admin/jobs/${task}`))
 			const { scheduled, lastRun } = resp.data
@@ -744,5 +983,40 @@ figure[class^='icon-'] {
 
 #recognize a:link, #recognize a:visited, #recognize a:hover {
 	text-decoration: underline;
+}
+
+#recognize .recognize-errors {
+	list-style: disc;
+	margin: 8px 0 8px 20px;
+	max-height: 300px;
+	overflow: auto;
+}
+
+#recognize .recognize-errors li {
+	margin-bottom: 4px;
+	word-break: break-word;
+}
+
+#recognize .recognize-output {
+	max-height: 300px;
+	overflow: auto;
+	white-space: pre-wrap;
+	font-size: 12px;
+}
+
+#recognize .recognize-table {
+	border-collapse: collapse;
+	margin: 8px 0;
+}
+
+#recognize .recognize-table th, #recognize .recognize-table td {
+	border-bottom: 1px solid var(--color-border);
+	padding: 4px 8px;
+	text-align: left;
+}
+
+#recognize h3 {
+	font-weight: bold;
+	margin-top: 8px;
 }
 </style>

@@ -19,9 +19,13 @@ use OCA\Recognize\BackgroundJobs\SchedulerJob;
 use OCA\Recognize\BackgroundJobs\StorageCrawlJob;
 use OCA\Recognize\Db\FaceClusterMapper;
 use OCA\Recognize\Db\FaceDetectionMapper;
+use OCA\Recognize\Migration\InstallDeps;
+use OCA\Recognize\Service\ErrorLog;
+use OCA\Recognize\Service\FaceClusterMerger;
 use OCA\Recognize\Service\QueueService;
 use OCA\Recognize\Service\SettingsService;
 use OCA\Recognize\Service\TagManager;
+use OCA\Recognize\Service\TensorflowCheck;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\JSONResponse;
@@ -32,6 +36,7 @@ use OCP\DB\Exception;
 use OCP\Exceptions\AppConfigTypeConflictException;
 use OCP\IBinaryFinder;
 use OCP\IRequest;
+use OCP\Migration\IOutput;
 
 final class AdminController extends Controller {
 	private TagManager $tagManager;
@@ -43,9 +48,17 @@ final class AdminController extends Controller {
 	private IAppConfig $config;
 	private FaceDetectionMapper $faceDetections;
 	private IBinaryFinder $binaryFinder;
+	private ErrorLog $errorLog;
+	private TensorflowCheck $tensorflowCheck;
+	private FaceClusterMerger $clusterMerger;
+	private InstallDeps $installDeps;
 
-	public function __construct(string $appName, IRequest $request, TagManager $tagManager, IJobList $jobList, SettingsService $settingsService, QueueService $queue, FaceClusterMapper $clusterMapper, FaceDetectionMapper $detectionMapper, IAppConfig $config, FaceDetectionMapper $faceDetections, IBinaryFinder $binaryFinder) {
+	public function __construct(string $appName, IRequest $request, TagManager $tagManager, IJobList $jobList, SettingsService $settingsService, QueueService $queue, FaceClusterMapper $clusterMapper, FaceDetectionMapper $detectionMapper, IAppConfig $config, FaceDetectionMapper $faceDetections, IBinaryFinder $binaryFinder, ErrorLog $errorLog, TensorflowCheck $tensorflowCheck, FaceClusterMerger $clusterMerger, InstallDeps $installDeps) {
 		parent::__construct($appName, $request);
+		$this->errorLog = $errorLog;
+		$this->tensorflowCheck = $tensorflowCheck;
+		$this->clusterMerger = $clusterMerger;
+		$this->installDeps = $installDeps;
 		$this->tagManager = $tagManager;
 		$this->jobList = $jobList;
 		$this->settingsService = $settingsService;
@@ -238,45 +251,103 @@ final class AdminController extends Controller {
 	}
 
 	public function libtensorflow(): JSONResponse {
-		try {
-			exec($this->settingsService->getSetting('node_binary') . ' ' . __DIR__ . '/../../src/test_libtensorflow.js' . ' 2>&1', $output, $returnCode);
-		} catch (\Throwable $e) {
-			return new JSONResponse(['libtensorflow' => false]);
-		}
-
-		if ($returnCode !== 0) {
-			return new JSONResponse(['libtensorflow' => false]);
-		}
-
-		return new JSONResponse(['libtensorflow' => true]);
+		$result = $this->tensorflowCheck->test(TensorflowCheck::MODE_CPU);
+		return new JSONResponse(['libtensorflow' => $result['ok'], 'missingLibraries' => $result['missingLibraries']]);
 	}
 
 	public function wasmtensorflow(): JSONResponse {
-		try {
-			exec($this->settingsService->getSetting('node_binary') . ' ' . __DIR__ . '/../../src/test_wasmtensorflow.js' . ' 2>&1', $output, $returnCode);
-		} catch (\Throwable $e) {
-			return new JSONResponse(['wasmtensorflow' => false]);
-		}
-
-		if ($returnCode !== 0) {
-			return new JSONResponse(['wasmtensorflow' => false]);
-		}
-
-		return new JSONResponse(['wasmtensorflow' => true]);
+		$result = $this->tensorflowCheck->test(TensorflowCheck::MODE_WASM);
+		return new JSONResponse(['wasmtensorflow' => $result['ok']]);
 	}
 
 	public function gputensorflow(): JSONResponse {
+		$result = $this->tensorflowCheck->test(TensorflowCheck::MODE_GPU);
+		return new JSONResponse(['gputensorflow' => $result['ok'], 'missingLibraries' => $result['missingLibraries']]);
+	}
+
+	/**
+	 * Fresh smoke test of the configured TensorFlow mode, with diagnostics (missing libraries, Node.js output).
+	 */
+	public function tensorflowStatus(): JSONResponse {
+		return new JSONResponse($this->tensorflowCheck->run(true));
+	}
+
+	public function errors(): JSONResponse {
+		return new JSONResponse(['errors' => $this->errorLog->getRecent()]);
+	}
+
+	public function clearErrors(): JSONResponse {
+		$this->errorLog->clear();
+		return new JSONResponse([]);
+	}
+
+	/**
+	 * Re-run the dependency installation (Node.js binary, libtensorflow, ffmpeg) from the UI.
+	 * Everything that needs root (CUDA, cuDNN) still has to be installed on the server.
+	 */
+	public function installDeps(): JSONResponse {
+		$messages = [];
+		$output = new class($messages) implements IOutput {
+			/** @param list<string> $messages */
+			public function __construct(private array &$messages) {
+			}
+			public function debug(string $message): void {
+			}
+			public function info($message): void {
+				$this->messages[] = (string)$message;
+			}
+			public function warning($message): void {
+				$this->messages[] = 'Warning: ' . (string)$message;
+			}
+			public function startProgress($max = 0): void {
+			}
+			public function advance($step = 1, $description = ''): void {
+			}
+			public function finishProgress(): void {
+			}
+		};
 		try {
-			exec($this->settingsService->getSetting('node_binary') . ' ' . __DIR__ . '/../../src/test_gputensorflow.js' . ' 2>&1', $output, $returnCode);
+			$this->installDeps->run($output);
 		} catch (\Throwable $e) {
-			return new JSONResponse(['gputensorflow' => false]);
+			$messages[] = 'Error: ' . $e->getMessage();
+			return new JSONResponse(['ok' => false, 'messages' => $messages], Http::STATUS_INTERNAL_SERVER_ERROR);
 		}
+		return new JSONResponse(['ok' => true, 'messages' => $messages]);
+	}
 
-		if ($returnCode !== 0) {
-			return new JSONResponse(['gputensorflow' => false]);
+	/**
+	 * Dry run of the automatic cluster merge for every user with face detections.
+	 */
+	public function mergeSuggestions(): JSONResponse {
+		$threshold = $this->clusterMerger->getConfiguredThreshold();
+		if ($threshold <= 0) {
+			$threshold = FaceClusterMerger::DEFAULT_THRESHOLD;
 		}
+		try {
+			$users = [];
+			foreach ($this->faceDetections->findUserIds() as $userId) {
+				$users[$userId] = $this->clusterMerger->findCandidates($userId, $threshold);
+			}
+		} catch (Exception $e) {
+			return new JSONResponse(['message' => $e->getMessage()], Http::STATUS_INTERNAL_SERVER_ERROR);
+		}
+		return new JSONResponse(['threshold' => $threshold, 'users' => $users]);
+	}
 
-		return new JSONResponse(['gputensorflow' => true]);
+	public function autoMerge(): JSONResponse {
+		$threshold = $this->clusterMerger->getConfiguredThreshold();
+		if ($threshold <= 0) {
+			$threshold = FaceClusterMerger::DEFAULT_THRESHOLD;
+		}
+		try {
+			$users = [];
+			foreach ($this->faceDetections->findUserIds() as $userId) {
+				$users[$userId] = $this->clusterMerger->merge($userId, $threshold);
+			}
+		} catch (Exception $e) {
+			return new JSONResponse(['message' => $e->getMessage()], Http::STATUS_INTERNAL_SERVER_ERROR);
+		}
+		return new JSONResponse(['threshold' => $threshold, 'users' => $users]);
 	}
 
 	public function cron(): JSONResponse {

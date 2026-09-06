@@ -36,6 +36,11 @@ final class ClusteringFaceClassifier extends Classifier {
 	public const MAX_FACE_ROLL = 30;
 
 	public const MODEL_NAME = 'faces';
+	public const PREVIEW_DIMENSIONS = [1024, 2048, 4096];
+	/** In additive mode a new detection overlapping an existing one by more than this IoU is considered the same face */
+	public const ADDITIVE_DUPLICATE_IOU = 0.5;
+
+	private bool $additive = false;
 
 	public function __construct(
 		Logger $logger,
@@ -62,6 +67,56 @@ final class ClusteringFaceClassifier extends Classifier {
 		return array_values(array_unique($userIds));
 	}
 
+	/**
+	 * The face detector works on a 512px copy of the image, but landmarks and descriptors
+	 * are computed on the preview handed to it, so a larger preview yields better descriptors
+	 * for small faces (faces.previewDimension setting).
+	 */
+	#[Override]
+	protected function getTempFileDimension(): int {
+		$dimension = (int)$this->config->getAppValueString('faces.previewDimension', '1024', lazy: true);
+		return in_array($dimension, self::PREVIEW_DIMENSIONS, true) ? $dimension : self::TEMP_FILE_DIMENSION;
+	}
+
+	/**
+	 * @return array<string,string>
+	 */
+	#[Override]
+	protected function getExtraEnvironment(): array {
+		if ($this->config->getAppValueString('faces.tiling', 'false', lazy: true) === 'true') {
+			return ['RECOGNIZE_FACES_TILING' => 'true'];
+		}
+		return [];
+	}
+
+	/**
+	 * Additive mode re-scans files that already have face detections and only adds the
+	 * faces that were not detected before (e.g. small faces found with tiling enabled),
+	 * so existing detections, clusters and their names are preserved.
+	 */
+	public function setAdditive(bool $additive): void {
+		$this->additive = $additive;
+	}
+
+	/**
+	 * @param array{x: float, y: float, width: float, height: float} $face
+	 * @param list<FaceDetection> $existing
+	 */
+	private function isKnownFace(array $face, array $existing): bool {
+		foreach ($existing as $detection) {
+			$x0 = max($face['x'], $detection->getX());
+			$y0 = max($face['y'], $detection->getY());
+			$x1 = min($face['x'] + $face['width'], $detection->getX() + $detection->getWidth());
+			$y1 = min($face['y'] + $face['height'], $detection->getY() + $detection->getHeight());
+			$intersection = max(0.0, $x1 - $x0) * max(0.0, $y1 - $y0);
+			$union = $face['width'] * $face['height'] + $detection->getWidth() * $detection->getHeight() - $intersection;
+			if ($union > 0 && $intersection / $union > self::ADDITIVE_DUPLICATE_IOU) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	#[Override]
 	public function classify(array $queueFiles): void {
 		if ($this->config->getAppValueString('tensorflow.purejs', 'false', lazy: true) === 'true') {
@@ -78,7 +133,7 @@ final class ClusteringFaceClassifier extends Classifier {
 				$this->logger->debug('finding faces by file '.$queueFile->getFileId().' failed', ['exception' => $e]);
 				$facesByFileCount = 1;
 			}
-			if ($facesByFileCount !== 0) {
+			if ($facesByFileCount !== 0 && !$this->additive) {
 				try {
 					$this->logger->debug('Remove file with existing faces from queue '.$queueFile->getFileId());
 					$this->queue->removeFromQueue(self::MODEL_NAME, $queueFile);
@@ -116,6 +171,19 @@ final class ClusteringFaceClassifier extends Classifier {
 
 				// Insert face detection for all users with access
 				foreach ($userIds as $userId) {
+					if ($this->additive) {
+						try {
+							$existing = $this->faceDetections->findByFileIdAndUser($queueFile->getFileId(), $userId);
+						} catch (Exception $e) {
+							$this->logger->warning('Could not load existing face detections', ['exception' => $e]);
+							$existing = [];
+						}
+						if ($this->isKnownFace($face, $existing)) {
+							$this->logger->debug('Face already known for user ' . $userId . ', skipping');
+							continue;
+						}
+						$this->logger->info('New face found in file ' . $queueFile->getFileId() . ' for user ' . $userId);
+					}
 					$this->logger->debug('preparing face detection for user ' . $userId);
 					$faceDetection = new FaceDetection();
 					$faceDetection->setX($face['x']);

@@ -17,7 +17,7 @@ use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\BackgroundJob\IJobList;
 use OCP\BackgroundJob\TimedJob;
 use OCP\DB\Exception;
-use Psr\Log\LoggerInterface;
+use OCA\Recognize\Service\Logger;
 
 final class ProcessFsActionsJob extends TimedJob {
 
@@ -26,7 +26,7 @@ final class ProcessFsActionsJob extends TimedJob {
 		private FsActionService $accessUpdateService,
 		private IJobList        $jobList,
 		private FsActionMapper  $accessUpdateMapper,
-		private LoggerInterface $logger,
+		private Logger $logger,
 	) {
 		parent::__construct($timeFactory);
 		$this->setInterval(5 * 60);

@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace OCA\Recognize\BackgroundJobs;
 
 use OCA\Recognize\Db\QueueFile;
+use OCA\Recognize\Service\AdminNotifier;
 use OCA\Recognize\Service\QueueService;
 use OCA\Recognize\Service\SettingsService;
 use OCP\AppFramework\Utility\ITimeFactory;
@@ -80,9 +81,11 @@ abstract class ClassifierJob extends TimedJob {
 			$this->logger->warning('Problem with ' . $model . ' classifier', ['exception' => $e]);
 			$this->logger->debug('Removing '.static::class.' with argument ' . var_export($argument, true) . 'from oc_jobs');
 			$this->jobList->remove(static::class, $argument);
+			$this->notifyAdmins($model, $e);
 			throw $e;
 		} catch (\Throwable $e) {
 			$this->settingsService->setSetting($model.'.status', 'false');
+			$this->notifyAdmins($model, $e);
 			throw $e;
 		}
 
@@ -102,6 +105,22 @@ abstract class ClassifierJob extends TimedJob {
 	}
 
 	abstract protected function getBatchSize(): int;
+
+	/**
+	 * Tell the admins in the Nextcloud UI that this classifier is broken (throttled per model).
+	 * Resolved from the container so the constructor shared with the subclasses stays unchanged.
+	 */
+	private function notifyAdmins(string $model, \Throwable $e): void {
+		try {
+			\OCP\Server::get(AdminNotifier::class)->notify(
+				AdminNotifier::SUBJECT_CLASSIFIER_FAILED,
+				['model' => $model, 'message' => $e->getMessage()],
+				'classifier.' . $model
+			);
+		} catch (\Throwable $notifyError) {
+			$this->logger->debug('Could not notify admins', ['exception' => $notifyError]);
+		}
+	}
 
 	/**
 	 * @param list<QueueFile> $files

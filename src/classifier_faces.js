@@ -29,6 +29,20 @@ if (process.env.RECOGNIZE_PUREJS === 'true') {
 	}
 }
 
+/**
+ * The SSD MobileNet detector scales every input to 512x512, so a face that covers
+ * less than ~4% of a photo is only a dozen pixels for the detector and gets missed.
+ * With tiling enabled (RECOGNIZE_FACES_TILING=true) the detector additionally runs on
+ * overlapping tiles of the image; each tile is scaled to 512px on its own, so faces
+ * appear TILE_GRID times larger. Landmarks and descriptors are always computed from
+ * the pixels of the tile/image that was handed in, i.e. at preview resolution.
+ */
+const TILING = process.env.RECOGNIZE_FACES_TILING === 'true'
+const TILE_GRID = 2
+const TILE_OVERLAP = 0.2
+const TILE_MIN_IMAGE_SIZE = 1024
+const DUPLICATE_IOU = 0.4
+
 if (process.argv.length < 3) throw new Error('Incorrect arguments: node classifier_faces.js ...<IMAGE_FILES> | node classify.js -')
 
 /**
@@ -55,17 +69,18 @@ async function main() {
 			} else {
 				tensor = await tf.node.decodeImage(await fs.readFile(path), 3)
 			}
-			const results = await faceapi.detectAllFaces(tensor).withFaceLandmarks().withFaceDescriptors()
+			const [height, width] = tensor.shape
+			const faces = await detectFaces(tensor, width, height)
 			tensor.dispose()
-			const vectors = results
-				.map(result => ({
-					angle: result.angle,
-					vector: result.descriptor,
-					x: result.detection.relativeBox.x,
-					y: result.detection.relativeBox.y,
-					height: result.detection.relativeBox.height,
-					width: result.detection.relativeBox.width,
-					score: result.detection.score,
+			const vectors = faces
+				.map(face => ({
+					angle: face.angle,
+					vector: face.vector,
+					x: face.box.x / width,
+					y: face.box.y / height,
+					height: face.box.height / height,
+					width: face.box.width / width,
+					score: face.score,
 				}))
 
 			console.log(JSON.stringify(vectors))
@@ -74,6 +89,89 @@ async function main() {
 			console.log('[]')
 		}
 	}
+}
+
+/**
+ * Detect faces in the whole image and, if enabled, additionally in overlapping tiles.
+ * Returns faces with boxes in absolute pixels of the full image.
+ *
+ * @param {tf.Tensor3D} tensor
+ * @param {number} width
+ * @param {number} height
+ */
+async function detectFaces(tensor, width, height) {
+	const faces = await detect(tensor, 0, 0)
+	if (!TILING || Math.max(width, height) < TILE_MIN_IMAGE_SIZE) {
+		return faces
+	}
+
+	const tileWidth = Math.ceil(width / TILE_GRID)
+	const tileHeight = Math.ceil(height / TILE_GRID)
+	const overlapX = Math.round(tileWidth * TILE_OVERLAP)
+	const overlapY = Math.round(tileHeight * TILE_OVERLAP)
+	for (let row = 0; row < TILE_GRID; row++) {
+		for (let col = 0; col < TILE_GRID; col++) {
+			const x0 = Math.max(0, col * tileWidth - overlapX)
+			const y0 = Math.max(0, row * tileHeight - overlapY)
+			const x1 = Math.min(width, (col + 1) * tileWidth + overlapX)
+			const y1 = Math.min(height, (row + 1) * tileHeight + overlapY)
+			const tile = tf.slice(tensor, [y0, x0, 0], [y1 - y0, x1 - x0, 3])
+			let tileFaces
+			try {
+				tileFaces = await detect(tile, x0, y0)
+			} finally {
+				tile.dispose()
+			}
+			for (const face of tileFaces) {
+				// Faces the full-image pass already found are kept from that pass (better context)
+				if (!faces.some(existing => iou(existing.box, face.box) > DUPLICATE_IOU)) {
+					faces.push(face)
+				}
+			}
+		}
+	}
+	return faces
+}
+
+/**
+ * Run the detector + landmarks + descriptor chain on a tensor and translate boxes by an offset.
+ *
+ * @param {tf.Tensor3D} tensor
+ * @param {number} offsetX
+ * @param {number} offsetY
+ */
+async function detect(tensor, offsetX, offsetY) {
+	const results = await faceapi.detectAllFaces(tensor).withFaceLandmarks().withFaceDescriptors()
+	return results.map(result => {
+		const box = result.detection.box
+		return {
+			angle: result.angle,
+			vector: Array.from(result.descriptor),
+			score: result.detection.score,
+			box: {
+				x: box.x + offsetX,
+				y: box.y + offsetY,
+				width: box.width,
+				height: box.height,
+			},
+		}
+	})
+}
+
+/**
+ * Intersection over union of two boxes ({x, y, width, height} in pixels)
+ *
+ * @param a
+ * @param b
+ */
+function iou(a, b) {
+	const x0 = Math.max(a.x, b.x)
+	const y0 = Math.max(a.y, b.y)
+	const x1 = Math.min(a.x + a.width, b.x + b.width)
+	const y1 = Math.min(a.y + a.height, b.y + b.height)
+	const intersection = Math.max(0, x1 - x0) * Math.max(0, y1 - y0)
+	const union = a.width * a.height + b.width * b.height - intersection
+	return union > 0 ? intersection / union : 0
 }
 
 tf.setBackend(PUREJS ? 'wasm' : 'tensorflow')

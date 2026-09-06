@@ -9,6 +9,7 @@ namespace OCA\Recognize\Command;
 
 use OCA\Recognize\Db\FaceDetectionMapper;
 use OCA\Recognize\Service\FaceClusterAnalyzer;
+use OCA\Recognize\Service\FaceClusterMerger;
 use OCA\Recognize\Service\Logger;
 use OCA\Recognize\Service\SettingsService;
 use OCP\DB\Exception;
@@ -24,13 +25,15 @@ final class ClusterFaces extends Command {
 
 	private FaceClusterAnalyzer $clusterAnalyzer;
 	private SettingsService $settingsService;
+	private FaceClusterMerger $clusterMerger;
 
-	public function __construct(Logger $logger, FaceDetectionMapper $detectionMapper, FaceClusterAnalyzer $clusterAnalyzer, SettingsService $settingsService) {
+	public function __construct(Logger $logger, FaceDetectionMapper $detectionMapper, FaceClusterAnalyzer $clusterAnalyzer, SettingsService $settingsService, FaceClusterMerger $clusterMerger) {
 		parent::__construct();
 		$this->logger = $logger;
 		$this->detectionMapper = $detectionMapper;
 		$this->clusterAnalyzer = $clusterAnalyzer;
 		$this->settingsService = $settingsService;
+		$this->clusterMerger = $clusterMerger;
 	}
 
 	/**
@@ -66,6 +69,10 @@ final class ClusterFaces extends Command {
 			$this->logger->info('Clustering face detections for user ' . $userId);
 			try {
 				$this->clusterAnalyzer->calculateClusters($userId, (int)$input->getOption('batch-size'));
+				$merged = $this->clusterMerger->merge($userId);
+				if (count($merged) > 0) {
+					$this->logger->info('Auto-merged ' . count($merged) . ' unnamed cluster(s) into named clusters for user ' . $userId);
+				}
 			} catch (\JsonException|Exception $e) {
 				$this->settingsService->setSetting('clusterFaces.status', 'false');
 				$this->logger->error($e->getMessage(), ['exception' => $e]);

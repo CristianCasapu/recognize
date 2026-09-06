@@ -44,6 +44,14 @@ final class FaceClusterAnalyzer {
 	}
 
 	/**
+	 * Faces smaller than this fraction of the image are excluded from clustering,
+	 * configurable via faces.minDetectionSize (MIN_DETECTION_SIZE when unset or invalid).
+	 */
+	public function getMinDetectionSize(): float {
+		return $this->faceDetections->getMinDetectionSize();
+	}
+
+	/**
 	 * @throws \OCP\DB\Exception
 	 * @throws \JsonException
 	 */
@@ -55,6 +63,7 @@ final class FaceClusterAnalyzer {
 		}
 
 
+		$minDetectionSize = $this->getMinDetectionSize();
 		$sampledDetections = [];
 		$existingClusters = $this->faceClusters->findByUserId($userId);
 		/** @var array<int,int> $maxVotesByCluster */
@@ -73,15 +82,15 @@ final class FaceClusterAnalyzer {
 		}
 
 		if ($batchSize > 0) {
-			$rejectedDetections = $this->faceDetections->sampleRejectedDetectionsByUserId($userId, $this->getRejectSampleSize($batchSize), self::MIN_DETECTION_SIZE, self::MIN_DETECTION_SIZE);
+			$rejectedDetections = $this->faceDetections->sampleRejectedDetectionsByUserId($userId, $this->getRejectSampleSize($batchSize), $minDetectionSize, $minDetectionSize);
 			// Guarantee forward progress even when samples and rejects have eaten the whole
 			// budget, but keep the floor relative so a small batch size stays a small batch.
 			$freshDetectionFloor = min(500, (int)round($batchSize * (1.0 - self::REFERENCE_SAMPLE_BUDGET_SHARE)));
 			$requestedFreshDetectionCount = max($batchSize - count($rejectedDetections) - count($sampledDetections), $freshDetectionFloor);
-			$freshDetections = $this->faceDetections->findUnclusteredByUserId($userId, $requestedFreshDetectionCount, self::MIN_DETECTION_SIZE, self::MIN_DETECTION_SIZE);
+			$freshDetections = $this->faceDetections->findUnclusteredByUserId($userId, $requestedFreshDetectionCount, $minDetectionSize, $minDetectionSize);
 		} else {
-			$freshDetections = $this->faceDetections->findUnclusteredByUserId($userId, 0, self::MIN_DETECTION_SIZE, self::MIN_DETECTION_SIZE);
-			$rejectedDetections = $this->faceDetections->sampleRejectedDetectionsByUserId($userId, $this->getRejectSampleSize(count($freshDetections)), self::MIN_DETECTION_SIZE, self::MIN_DETECTION_SIZE);
+			$freshDetections = $this->faceDetections->findUnclusteredByUserId($userId, 0, $minDetectionSize, $minDetectionSize);
+			$rejectedDetections = $this->faceDetections->sampleRejectedDetectionsByUserId($userId, $this->getRejectSampleSize(count($freshDetections)), $minDetectionSize, $minDetectionSize);
 		}
 
 

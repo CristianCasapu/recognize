@@ -11,6 +11,14 @@ use OCA\DAV\Connector\Sabre\Principal;
 use OCA\DAV\Events\SabrePluginAddEvent;
 use OCA\Recognize\Dav\Faces\PropFindPlugin;
 use OCA\Recognize\Hooks\FileListener;
+use OCA\Recognize\Notification\Notifier;
+use OCA\Recognize\SetupChecks\CronMode;
+use OCA\Recognize\SetupChecks\DiskSpace;
+use OCA\Recognize\SetupChecks\ModelsDownloaded;
+use OCA\Recognize\SetupChecks\NodeBinary;
+use OCA\Recognize\SetupChecks\QueueHealth;
+use OCA\Recognize\SetupChecks\RecentErrors;
+use OCA\Recognize\SetupChecks\Tensorflow;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
 use OCP\AppFramework\Bootstrap\IBootstrap;
@@ -53,6 +61,17 @@ final class Application extends App implements IBootstrap {
 
 		/** Register $principalBackend for the DAV collection */
 		$context->registerServiceAlias('principalBackend', Principal::class);
+
+		$context->registerNotifierService(Notifier::class);
+
+		// Surface broken setups in Administration settings > Overview and `occ setupchecks`
+		$context->registerSetupCheck(NodeBinary::class);
+		$context->registerSetupCheck(Tensorflow::class);
+		$context->registerSetupCheck(ModelsDownloaded::class);
+		$context->registerSetupCheck(CronMode::class);
+		$context->registerSetupCheck(QueueHealth::class);
+		$context->registerSetupCheck(RecentErrors::class);
+		$context->registerSetupCheck(DiskSpace::class);
 	}
 
 	/**

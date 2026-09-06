@@ -11,6 +11,7 @@ use OCA\Recognize\Service\FaceClusterAnalyzer;
 use OCP\AppFramework\Db\DoesNotExistException;
 use OCP\AppFramework\Db\Entity;
 use OCP\AppFramework\Db\QBMapper;
+use OCP\AppFramework\Services\IAppConfig;
 use OCP\DB\Exception;
 use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\IConfig;
@@ -21,11 +22,22 @@ use OCP\IDBConnection;
  */
 final class FaceDetectionMapper extends QBMapper {
 	private IConfig $config;
+	private IAppConfig $appConfig;
 
-	public function __construct(IDBConnection $db, IConfig $config) {
+	public function __construct(IDBConnection $db, IConfig $config, IAppConfig $appConfig) {
 		parent::__construct($db, 'recognize_face_detections', FaceDetection::class);
 		$this->db = $db;
 		$this->config = $config;
+		$this->appConfig = $appConfig;
+	}
+
+	/**
+	 * Faces smaller than this (relative to the image) are ignored by clustering.
+	 * Configurable via the faces.minDetectionSize setting.
+	 */
+	public function getMinDetectionSize(): float {
+		$size = (float)$this->appConfig->getAppValueString('faces.minDetectionSize', '0', lazy: true);
+		return $size > 0 ? $size : FaceClusterAnalyzer::MIN_DETECTION_SIZE;
 	}
 
 	/**
@@ -292,6 +304,35 @@ final class FaceDetectionMapper extends QBMapper {
 		return $this->findEntities($qb);
 	}
 
+	/**
+	 * Move all detections of one cluster to another cluster.
+	 *
+	 * @return int number of moved detections
+	 * @throws \OCP\DB\Exception
+	 */
+	public function moveToCluster(int $fromClusterId, int $toClusterId): int {
+		$qb = $this->db->getQueryBuilder();
+		$qb->update('recognize_face_detections')
+			->set('cluster_id', $qb->createPositionalParameter($toClusterId, IQueryBuilder::PARAM_INT))
+			->where($qb->expr()->eq('cluster_id', $qb->createPositionalParameter($fromClusterId, IQueryBuilder::PARAM_INT)));
+		return $qb->executeStatement();
+	}
+
+	/**
+	 * @throws \OCP\DB\Exception
+	 */
+	public function countByClusterId(int $clusterId): int {
+		$qb = $this->db->getQueryBuilder();
+		$qb->select($qb->func()->count('id'))
+			->from('recognize_face_detections')
+			->where($qb->expr()->eq('cluster_id', $qb->createPositionalParameter($clusterId, IQueryBuilder::PARAM_INT)));
+		$result = $qb->executeQuery();
+		/** @var int|string $count */
+		$count = $result->fetch(\PDO::FETCH_COLUMN);
+		$result->closeCursor();
+		return (int) $count;
+	}
+
 	public function removeAllClusters(): void {
 		$qb = $this->db->getQueryBuilder();
 		$qb->update('recognize_face_detections')
@@ -333,8 +374,8 @@ final class FaceDetectionMapper extends QBMapper {
 		$qb->select($qb->func()->count('id'))
 			->from('recognize_face_detections')
 			->where($qb->expr()->isNull('cluster_id'))
-			->andWhere($qb->expr()->gte('height', $qb->createPositionalParameter(FaceClusterAnalyzer::MIN_DETECTION_SIZE)))
-			->andWhere($qb->expr()->gte('width', $qb->createPositionalParameter(FaceClusterAnalyzer::MIN_DETECTION_SIZE)));
+			->andWhere($qb->expr()->gte('height', $qb->createPositionalParameter($this->getMinDetectionSize())))
+			->andWhere($qb->expr()->gte('width', $qb->createPositionalParameter($this->getMinDetectionSize())));
 		$result = $qb->executeQuery();
 		/** @var int|string $count */
 		$count = $result->fetch(\PDO::FETCH_COLUMN);
@@ -351,8 +392,8 @@ final class FaceDetectionMapper extends QBMapper {
 		$qb->selectDistinct('user_id')
 			->from('recognize_face_detections')
 			->where($qb->expr()->isNull('cluster_id'))
-			->andWhere($qb->expr()->gte('height', $qb->createPositionalParameter(FaceClusterAnalyzer::MIN_DETECTION_SIZE)))
-			->andWhere($qb->expr()->gte('width', $qb->createPositionalParameter(FaceClusterAnalyzer::MIN_DETECTION_SIZE)));
+			->andWhere($qb->expr()->gte('height', $qb->createPositionalParameter($this->getMinDetectionSize())))
+			->andWhere($qb->expr()->gte('width', $qb->createPositionalParameter($this->getMinDetectionSize())));
 		$result = $qb->executeQuery();
 		/** @var array<string> $users */
 		$users = $result->fetchAll(\PDO::FETCH_COLUMN);

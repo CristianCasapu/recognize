@@ -21,11 +21,10 @@ use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\BackgroundJob\IJobList;
 use OCP\BackgroundJob\QueuedJob;
 use OCP\DB\Exception;
-use Psr\Log\LoggerInterface;
 
 final class StorageCrawlJob extends QueuedJob {
 	public const BATCH_SIZE = 2000;
-	private LoggerInterface $logger;
+	private Logger $logger;
 	private QueueService $queue;
 	private IJobList $jobList;
 	private TagManager $tagManager;
