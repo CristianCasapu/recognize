@@ -11,6 +11,7 @@ OC.L10N.register(
     "Status" : "Staða",
     "Reset" : "Endurstilla",
     "Architecture" : "Tölvuhögun",
+    "Building" : "Bygging",
     "Farm" : "Býli",
     "Landscape" : "Lárétt",
     "Portrait" : "Lóðrétt",
