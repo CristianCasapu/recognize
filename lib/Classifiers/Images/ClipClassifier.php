@@ -61,7 +61,17 @@ final class ClipClassifier extends Classifier {
 			throw new \ErrorException('The CLIP model is not installed (occ recognize:install-clip)');
 		}
 		$model = $this->clipModel->getModelName();
-		foreach ($this->classifyFiles(self::MODEL_NAME, $queueFiles, self::IMAGE_TIMEOUT) as $queueFile => $result) {
+		// Files that already have an embedding of this model are done (re-index with occ recognize:reset-clip)
+		$pending = [];
+		foreach ($queueFiles as $queueFile) {
+			$existing = $this->embeddings->findByFileId($queueFile->getFileId());
+			if ($existing !== null && $existing->getModel() === $model) {
+				$this->queue->removeFromQueue(self::MODEL_NAME, $queueFile);
+				continue;
+			}
+			$pending[] = $queueFile;
+		}
+		foreach ($this->classifyFiles(self::MODEL_NAME, $pending, self::IMAGE_TIMEOUT) as $queueFile => $result) {
 			if (!is_array($result) || !isset($result['vector']) || !is_array($result['vector']) || count($result['vector']) === 0) {
 				$this->logger->debug('No embedding for file ' . $queueFile->getFileId());
 				continue;
