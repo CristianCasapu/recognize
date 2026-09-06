@@ -336,6 +336,53 @@ final class FaceDetectionMapper extends QBMapper {
 	}
 
 	/**
+	 * (cluster, file) pairs where a cluster has more than one face in the same photo.
+	 * A person cannot appear twice in one photo, so these are always errors.
+	 *
+	 * @return list<array{clusterId:int, fileId:int}>
+	 * @throws \OCP\DB\Exception
+	 */
+	public function findDuplicateFacesPerFile(string $userId): array {
+		$qb = $this->db->getQueryBuilder();
+		$qb->select('cluster_id', 'file_id')
+			->from('recognize_face_detections')
+			->where($qb->expr()->eq('user_id', $qb->createPositionalParameter($userId)))
+			->andWhere($qb->expr()->gt('cluster_id', $qb->createPositionalParameter(0, IQueryBuilder::PARAM_INT)))
+			->groupBy('cluster_id', 'file_id')
+			->having($qb->expr()->gt($qb->func()->count('id'), $qb->createPositionalParameter(1, IQueryBuilder::PARAM_INT)));
+		$result = $qb->executeQuery();
+		$rows = [];
+		while ($row = $result->fetch()) {
+			$rows[] = ['clusterId' => (int)$row['cluster_id'], 'fileId' => (int)$row['file_id']];
+		}
+		$result->closeCursor();
+		return $rows;
+	}
+
+	/**
+	 * Number of photos that contain a face of both clusters. Two clusters that appear together
+	 * in a photo cannot be the same person.
+	 *
+	 * @throws \OCP\DB\Exception
+	 */
+	public function countSharedFiles(int $clusterA, int $clusterB): int {
+		$qb = $this->db->getQueryBuilder();
+		$qb->select($qb->func()->count($qb->createFunction('DISTINCT a.file_id')))
+			->from('recognize_face_detections', 'a')
+			->innerJoin('a', 'recognize_face_detections', 'b', $qb->expr()->andX(
+				$qb->expr()->eq('a.file_id', 'b.file_id'),
+				$qb->expr()->eq('a.user_id', 'b.user_id')
+			))
+			->where($qb->expr()->eq('a.cluster_id', $qb->createPositionalParameter($clusterA, IQueryBuilder::PARAM_INT)))
+			->andWhere($qb->expr()->eq('b.cluster_id', $qb->createPositionalParameter($clusterB, IQueryBuilder::PARAM_INT)));
+		$result = $qb->executeQuery();
+		/** @var int|string $count */
+		$count = $result->fetch(\PDO::FETCH_COLUMN);
+		$result->closeCursor();
+		return (int)$count;
+	}
+
+	/**
 	 * @throws \OCP\DB\Exception
 	 */
 	public function countByClusterId(int $clusterId): int {

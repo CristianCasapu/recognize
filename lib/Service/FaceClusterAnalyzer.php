@@ -207,6 +207,11 @@ final class FaceClusterAnalyzer {
 
 		$this->logger->debug('ClusterDebug: Clustering complete. Total num of clustered detections: ' . $numberOfClusteredDetections);
 
+		$duplicates = $this->enforceOnePersonPerPhoto($userId);
+		if ($duplicates > 0) {
+			$this->logger->debug('ClusterDebug: Rejected ' . $duplicates . ' faces that would put the same person twice into one photo');
+		}
+
 		foreach ($unclusteredDetections as $detection) {
 			if ($detection->getClusterId() === null) {
 				// This detection was run through clustering but wasn't assigned to any cluster
@@ -240,11 +245,26 @@ final class FaceClusterAnalyzer {
 			return 0;
 		}
 		$assigned = 0;
+		/** @var array<int, array<int, true>> $clustersInFile file id => cluster ids that already have a face in that photo */
+		$clustersInFile = [];
 		foreach ($detections as $detection) {
+			$fileId = $detection->getFileId();
+			if (!isset($clustersInFile[$fileId])) {
+				$clustersInFile[$fileId] = [];
+				foreach ($this->faceDetections->findByFileIdAndUser($fileId, $detection->getUserId()) as $sibling) {
+					if ($sibling->getClusterId() !== null && $sibling->getClusterId() > 0) {
+						$clustersInFile[$fileId][$sibling->getClusterId()] = true;
+					}
+				}
+			}
 			$best = null;
 			$bestDistance = INF;
 			$secondDistance = INF;
-			foreach ($centroids as $entry) {
+			foreach ($centroids as $clusterId => $entry) {
+				if (isset($clustersInFile[$fileId][$clusterId])) {
+					// this person is already in the photo: another face cannot be them as well
+					continue;
+				}
 				$distance = self::distance($detection->getVector(), $entry['centroid']);
 				if ($distance < $bestDistance) {
 					$secondDistance = $bestDistance;
@@ -262,9 +282,35 @@ final class FaceClusterAnalyzer {
 				continue;
 			}
 			$this->faceDetections->assocWithCluster($detection, $best);
+			$clustersInFile[$fileId][$best->getId()] = true;
 			$assigned++;
 		}
 		return $assigned;
+	}
+
+	/**
+	 * A person cannot appear twice in the same photo: when a cluster ends up with several faces
+	 * in one file, keep the face closest to the cluster centroid and reject the others.
+	 *
+	 * @return int number of rejected detections
+	 * @throws \OCP\DB\Exception
+	 */
+	public function enforceOnePersonPerPhoto(string $userId): int {
+		$rejected = 0;
+		$centroids = [];
+		foreach ($this->faceDetections->findDuplicateFacesPerFile($userId) as $pair) {
+			if (!isset($centroids[$pair['clusterId']])) {
+				$centroids[$pair['clusterId']] = self::calculateCentroidOfDetections($this->faceDetections->findByClusterIdLimited($pair['clusterId'], FaceClusterMerger::SAMPLE_SIZE));
+			}
+			$faces = array_values(array_filter($this->faceDetections->findByFileIdAndUser($pair['fileId'], $userId), static fn (FaceDetection $d) => $d->getClusterId() === $pair['clusterId']));
+			usort($faces, fn (FaceDetection $a, FaceDetection $b) => self::distance($a->getVector(), $centroids[$pair['clusterId']]) <=> self::distance($b->getVector(), $centroids[$pair['clusterId']]));
+			foreach (array_slice($faces, 1) as $face) {
+				$face->setClusterId(-1);
+				$this->faceDetections->update($face);
+				$rejected++;
+			}
+		}
+		return $rejected;
 	}
 
 	/**

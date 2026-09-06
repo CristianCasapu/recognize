@@ -59,7 +59,7 @@ final class FaceClusterMerger {
 	/**
 	 * Find unnamed clusters that could be merged into a named cluster.
 	 *
-	 * @return list<array{clusterId:int, size:int, targetId:int, targetTitle:string, distance:float, secondDistance:?float, secondTitle:?string, mergeable:bool}>
+	 * @return list<array{clusterId:int, size:int, targetId:int, targetTitle:string, distance:float, secondDistance:?float, secondTitle:?string, sharedFiles:int, mergeable:bool}>
 	 * @throws \OCP\DB\Exception
 	 */
 	public function findCandidates(string $userId, float $threshold): array {
@@ -99,7 +99,10 @@ final class FaceClusterMerger {
 			usort($distances, static fn ($a, $b) => $a['distance'] <=> $b['distance']);
 			$best = $distances[0];
 			$second = $distances[1] ?? null;
+			// two clusters that appear together in a photo cannot be the same person
+			$sharedFiles = $this->faceDetections->countSharedFiles($cluster->getId(), $best['id']);
 			$mergeable = $best['distance'] < $threshold
+				&& $sharedFiles === 0
 				&& ($second === null || $second['distance'] - $best['distance'] >= self::AMBIGUITY_MARGIN);
 			$candidates[] = [
 				'clusterId' => $cluster->getId(),
@@ -109,6 +112,7 @@ final class FaceClusterMerger {
 				'distance' => round($best['distance'], 3),
 				'secondDistance' => $second !== null ? round($second['distance'], 3) : null,
 				'secondTitle' => $second !== null ? $second['title'] : null,
+				'sharedFiles' => $sharedFiles,
 				'mergeable' => $mergeable,
 			];
 		}

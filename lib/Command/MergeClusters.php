@@ -63,7 +63,7 @@ final class MergeClusters extends Command {
 				continue;
 			}
 			$table = new Table($output);
-			$table->setHeaders(['Unnamed cluster', 'Faces', 'Nearest named cluster', 'Distance', '2nd nearest', 'Distance', 'Merge?']);
+			$table->setHeaders(['Unnamed cluster', 'Faces', 'Nearest named cluster', 'Distance', '2nd nearest', 'Distance', 'Photos together', 'Merge?']);
 			foreach ($candidates as $candidate) {
 				$table->addRow([
 					'#' . $candidate['clusterId'],
@@ -72,6 +72,7 @@ final class MergeClusters extends Command {
 					$candidate['distance'],
 					$candidate['secondTitle'] ?? '-',
 					$candidate['secondDistance'] ?? '-',
+					$candidate['sharedFiles'],
 					$candidate['mergeable'] ? 'yes' : 'no',
 				]);
 			}

@@ -192,7 +192,7 @@ occ recognize:switch-face-backend insightface</code></pre>
 			</p>
 			<p>&nbsp;</p>
 			<h3>{{ t('recognize', 'Automatic merging of clusters') }}</h3>
-			<p>{{ t('recognize', 'Clustering runs in batches and never merges two existing clusters, so the same person often ends up as one named and several unnamed clusters. When a threshold above 0 is set, unnamed clusters whose average face is closer than the threshold to a named cluster (and clearly farther from every other named cluster) are merged into it after every clustering run. Distances between different people are usually above 0.45; 0.4 is a safe start. Use "Preview" to see what would be merged with the current threshold before enabling it.') }}</p>
+			<p>{{ t('recognize', 'Clustering runs in batches and never merges two existing clusters, so the same person often ends up as one named and several unnamed clusters. When a threshold above 0 is set, unnamed clusters whose average face is closer than the threshold to a named cluster (and clearly farther from every other named cluster) are merged into it after every clustering run. Clusters that appear together in the same photo are never merged (a person cannot be in a photo twice). Typical thresholds: 0.4 for face-api, 0.85 for InsightFace. Use "Preview" to see what would be merged with the current threshold before enabling it.') }}</p>
 			<p>
 				<NcTextField :disabled="!settings['faces.enabled']"
 					:value.sync="settings['faces.autoMergeThreshold']"
@@ -234,6 +234,7 @@ occ recognize:switch-face-backend insightface</code></pre>
 							<th>{{ t('recognize', 'Nearest person') }}</th>
 							<th>{{ t('recognize', 'Distance') }}</th>
 							<th>{{ t('recognize', '2nd nearest') }}</th>
+							<th>{{ t('recognize', 'Photos together') }}</th>
 							<th>{{ t('recognize', 'Would merge (threshold {threshold})', { threshold: mergeSuggestions.threshold }) }}</th>
 						</tr>
 					</thead>
@@ -245,6 +246,7 @@ occ recognize:switch-face-backend insightface</code></pre>
 							<td>{{ candidate.targetTitle }}</td>
 							<td>{{ candidate.distance }}</td>
 							<td>{{ candidate.secondTitle ? candidate.secondTitle + ' (' + candidate.secondDistance + ')' : '-' }}</td>
+							<td>{{ candidate.sharedFiles }}</td>
 							<td>{{ candidate.mergeable ? t('recognize', 'yes') : t('recognize', 'no') }}</td>
 						</tr>
 					</tbody>
