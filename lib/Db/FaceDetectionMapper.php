@@ -383,6 +383,16 @@ final class FaceDetectionMapper extends QBMapper {
 	}
 
 	/**
+	 * Run a select on recognize_face_detections (alias d) built elsewhere and map the rows to entities.
+	 *
+	 * @return list<FaceDetection>
+	 * @throws \OCP\DB\Exception
+	 */
+	public function findEntitiesPublic(IQueryBuilder $qb): array {
+		return $this->findEntities($qb);
+	}
+
+	/**
 	 * @throws \OCP\DB\Exception
 	 */
 	public function countByClusterId(int $clusterId): int {

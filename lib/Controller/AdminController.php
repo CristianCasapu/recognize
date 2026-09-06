@@ -16,6 +16,7 @@ use OCA\Recognize\BackgroundJobs\ClassifyMovinetJob;
 use OCA\Recognize\BackgroundJobs\ClassifyMusicnnJob;
 use OCA\Recognize\BackgroundJobs\ClusterFacesJob;
 use OCA\Recognize\BackgroundJobs\InstallInsightfaceJob;
+use OCA\Recognize\BackgroundJobs\SelfUpdateJob;
 use OCA\Recognize\BackgroundJobs\SchedulerJob;
 use OCA\Recognize\BackgroundJobs\StorageCrawlJob;
 use OCA\Recognize\Db\FaceClusterMapper;
@@ -26,6 +27,7 @@ use OCA\Recognize\Service\FaceBackend;
 use OCA\Recognize\Service\FaceBackendSwitcher;
 use OCA\Recognize\Service\FaceClusterMerger;
 use OCA\Recognize\Service\FaceNameSnapshot;
+use OCA\Recognize\Service\ForkUpdater;
 use OCA\Recognize\Service\InsightfaceInstaller;
 use OCA\Recognize\Service\QueueService;
 use OCA\Recognize\Service\SettingsService;
@@ -61,9 +63,11 @@ final class AdminController extends Controller {
 	private FaceBackendSwitcher $faceBackendSwitcher;
 	private InsightfaceInstaller $insightfaceInstaller;
 	private FaceNameSnapshot $faceNameSnapshot;
+	private ForkUpdater $forkUpdater;
 
-	public function __construct(string $appName, IRequest $request, TagManager $tagManager, IJobList $jobList, SettingsService $settingsService, QueueService $queue, FaceClusterMapper $clusterMapper, FaceDetectionMapper $detectionMapper, IAppConfig $config, FaceDetectionMapper $faceDetections, IBinaryFinder $binaryFinder, ErrorLog $errorLog, TensorflowCheck $tensorflowCheck, FaceClusterMerger $clusterMerger, InstallDeps $installDeps, FaceBackend $faceBackend, FaceBackendSwitcher $faceBackendSwitcher, InsightfaceInstaller $insightfaceInstaller, FaceNameSnapshot $faceNameSnapshot) {
+	public function __construct(string $appName, IRequest $request, TagManager $tagManager, IJobList $jobList, SettingsService $settingsService, QueueService $queue, FaceClusterMapper $clusterMapper, FaceDetectionMapper $detectionMapper, IAppConfig $config, FaceDetectionMapper $faceDetections, IBinaryFinder $binaryFinder, ErrorLog $errorLog, TensorflowCheck $tensorflowCheck, FaceClusterMerger $clusterMerger, InstallDeps $installDeps, FaceBackend $faceBackend, FaceBackendSwitcher $faceBackendSwitcher, InsightfaceInstaller $insightfaceInstaller, FaceNameSnapshot $faceNameSnapshot, ForkUpdater $forkUpdater) {
 		parent::__construct($appName, $request);
+		$this->forkUpdater = $forkUpdater;
 		$this->faceBackend = $faceBackend;
 		$this->faceBackendSwitcher = $faceBackendSwitcher;
 		$this->insightfaceInstaller = $insightfaceInstaller;
@@ -371,6 +375,33 @@ final class AdminController extends Controller {
 	public function installInsightface(bool $gpu = true): JSONResponse {
 		$this->settingsService->setRawSetting(InsightfaceInstaller::LOG_SETTING, json_encode(['running' => true, 'lines' => ['Installation scheduled, waiting for the next background job run (cron)…']]));
 		$this->jobList->add(InstallInsightfaceJob::class, ['gpu' => $gpu]);
+		return new JSONResponse(['scheduled' => true]);
+	}
+
+	/**
+	 * Installed vs latest GitHub release of the forked apps, plus the log of a running/finished update.
+	 */
+	public function forkUpdates(bool $refresh = false): JSONResponse {
+		$log = null;
+		try {
+			$log = json_decode($this->settingsService->getRawSetting(ForkUpdater::LOG_SETTING, ''), true, 512, JSON_THROW_ON_ERROR);
+		} catch (\Throwable $e) {
+		}
+		return new JSONResponse([
+			'apps' => $this->forkUpdater->check($refresh),
+			'log' => is_array($log) ? $log : null,
+		]);
+	}
+
+	/**
+	 * Update a forked app from its GitHub release in a background job.
+	 */
+	public function forkUpdate(string $app): JSONResponse {
+		if (!isset(ForkUpdater::REPOS[$app])) {
+			return new JSONResponse(['message' => 'Unknown app'], Http::STATUS_BAD_REQUEST);
+		}
+		$this->settingsService->setRawSetting(ForkUpdater::LOG_SETTING, json_encode(['running' => true, 'app' => $app, 'lines' => ['Update scheduled, waiting for the next background job run (cron)…']]));
+		$this->jobList->add(SelfUpdateJob::class, ['app' => $app]);
 		return new JSONResponse(['scheduled' => true]);
 	}
 

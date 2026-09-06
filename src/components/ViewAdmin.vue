@@ -594,6 +594,51 @@ ldconfig -p | grep -E 'cudnn|cudart'          # both must be listed</code></pre>
 					@update:value="onChange" />
 			</p>
 		</NcSettingsSection>
+		<NcSettingsSection :name="t('recognize', 'Fork updates')">
+			<p>{{ t('recognize', 'This Recognize and the matching Memories are installed from the CristianCasapu forks on GitHub instead of the app store, so the app store cannot update them. New releases are detected here (and in Administration › Overview); an update downloads the release tarball, swaps the app folder, keeps the downloaded runtime files and runs the app upgrade — as a background job, or with "occ recognize:self-update <app>".') }}</p>
+			<p v-if="forkUpdates === null">
+				<span class="icon-loading-small" />&nbsp;&nbsp;&nbsp;&nbsp;{{ t('recognize', 'Checking GitHub releases') }}
+			</p>
+			<template v-else>
+				<table class="recognize-table">
+					<thead>
+						<tr>
+							<th>{{ t('recognize', 'App') }}</th>
+							<th>{{ t('recognize', 'Installed') }}</th>
+							<th>{{ t('recognize', 'Latest release') }}</th>
+							<th>{{ t('recognize', 'Published') }}</th>
+							<th />
+						</tr>
+					</thead>
+					<tbody>
+						<tr v-for="(info, app) in forkUpdates.apps" :key="app">
+							<td>{{ app }}</td>
+							<td>{{ info.installedTag }}</td>
+							<td>{{ info.latestTag || '-' }}</td>
+							<td>{{ info.published ? info.published.substring(0, 10) : '-' }}</td>
+							<td>
+								<span v-if="info.error">{{ info.error }}</span>
+								<span v-else-if="info.git">{{ t('recognize', 'git checkout — update with git') }}</span>
+								<button v-else-if="info.available"
+									class="button primary"
+									:disabled="updateBusy || (forkUpdates.log && forkUpdates.log.running)"
+									@click="onForkUpdate(app)">
+									{{ t('recognize', 'Update to {tag}', { tag: info.latestTag }) }}
+								</button>
+								<span v-else>{{ t('recognize', 'up to date') }}</span>
+							</td>
+						</tr>
+					</tbody>
+				</table>
+				<div v-if="forkUpdates.log" class="recognize-output-box">
+					<strong>{{ forkUpdates.log.running ? t('recognize', 'Update in progress…') : (forkUpdates.log.ok ? t('recognize', 'Update finished') : t('recognize', 'Update failed')) }}</strong>
+					<pre class="recognize-output">{{ (forkUpdates.log.lines || []).slice(-15).join('\n') }}</pre>
+				</div>
+				<button class="button" :disabled="updateBusy" @click="getForkUpdates(true)">
+					{{ t('recognize', 'Check again') }}
+				</button>
+			</template>
+		</NcSettingsSection>
 		<NcSettingsSection :name="t('recognize', 'Terminal commands') ">
 			<p>{{ t('recognize', 'To download all models preliminary to executing the classification jobs, run the following command on the server terminal.') }}</p>
 			<pre><code>occ recognize:download-models</code></pre>
@@ -676,6 +721,9 @@ export default {
 			tensorflow: undefined,
 			faceBackend: null,
 			backendBusy: false,
+			forkUpdates: null,
+			updatePoll: null,
+			updateBusy: false,
 			installPoll: null,
 			mergeSuggestions: null,
 			mergeResult: null,
@@ -724,6 +772,7 @@ export default {
 		this.getErrors()
 		this.getTensorflowStatus()
 		this.getFaceBackendStatus()
+		this.getForkUpdates()
 		this.getJobsStatus('imagenet')
 		this.getJobsStatus('faces')
 		this.getJobsStatus('landmarks')
@@ -970,6 +1019,34 @@ export default {
 				this.error = (e.response && e.response.data && e.response.data.message) || this.t('recognize', 'Switching the face model failed')
 			} finally {
 				this.backendBusy = false
+			}
+		},
+		async getForkUpdates(refresh = false) {
+			try {
+				const resp = await axios.get(generateUrl('/apps/recognize/admin/updates'), { params: { refresh: refresh ? 1 : 0 } })
+				this.forkUpdates = resp.data
+				const running = resp.data.log && resp.data.log.running
+				if (running && !this.updatePoll) {
+					this.updatePoll = setInterval(() => this.getForkUpdates(), 10000)
+				} else if (!running && this.updatePoll) {
+					clearInterval(this.updatePoll)
+					this.updatePoll = null
+					this.getForkUpdates(true)
+				}
+			} catch (e) {
+				console.error(e)
+			}
+		},
+		async onForkUpdate(app) {
+			this.updateBusy = true
+			try {
+				await axios.post(generateUrl(`/apps/recognize/admin/updates/${app}`))
+				await this.getForkUpdates()
+			} catch (e) {
+				console.error(e)
+				this.error = this.t('recognize', 'Could not schedule the update')
+			} finally {
+				this.updateBusy = false
 			}
 		},
 		async getMergeSuggestions() {

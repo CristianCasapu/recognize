@@ -50,5 +50,9 @@ return [
 		['name' => 'admin#faceBackendStatus', 'url' => '/admin/faces/backend', 'verb' => 'GET'],
 		['name' => 'admin#switchFaceBackend', 'url' => '/admin/faces/backend', 'verb' => 'POST'],
 		['name' => 'admin#installInsightface', 'url' => '/admin/faces/installInsightface', 'verb' => 'POST'],
+		['name' => 'admin#forkUpdates', 'url' => '/admin/updates', 'verb' => 'GET'],
+		['name' => 'admin#forkUpdate', 'url' => '/admin/updates/{app}', 'verb' => 'POST'],
+		// user API (Memories / Photos person pages)
+		['name' => 'faces#findMore', 'url' => '/api/faces/{clusterId}/find', 'verb' => 'POST'],
 	],
 ];
