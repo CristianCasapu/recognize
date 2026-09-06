@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - CristianCasapu fork
+## [12.1.0] - 2026-09-06 - CristianCasapu fork (Nextcloud 34)
 
 ### Added
 
@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - feat(faces): Automatic merging of unnamed clusters into the named cluster of the same person (`faces.autoMergeThreshold`, `occ recognize:merge-clusters`)
 - feat(faces): `occ recognize:rescan-faces` re-scans photos and adds newly found faces without touching existing detections and named clusters
 - feat: `tensorflow.ldLibraryPath` setting to point the classifier processes at CUDA/cuDNN libraries
+- feat(faces): InsightFace backend (RetinaFace + ArcFace via ONNX Runtime, GPU), `occ recognize:switch-face-backend`, `recognize:install-insightface`, `recognize:restore-face-names`; direct assignment of new faces to known people; a person cannot appear twice in one photo
+- feat: `occ recognize:status`; damaged images scanned through a tolerant ImageMagick fallback; RAW/TIFF/AVIF/JXL support
 
 ## [12.0.2] - 2026-08-26
 
