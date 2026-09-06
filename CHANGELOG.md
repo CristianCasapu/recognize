@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [12.2.0] - 2026-09-07 - CristianCasapu fork (Nextcloud 34)
+
+### Added
+
+- feat: natural-language photo search (multilingual CLIP embeddings via ONNX Runtime/GPU, `occ recognize:install-clip`, `GET /apps/recognize/api/search`), perceptual hashes for near-duplicate detection
+- feat(faces): "find this person in more photos" API for the Memories person page; a person cannot appear twice in one photo; zero-touch setup (AutoSetup repair step, automatic InsightFace + search model install)
+- feat: fork self-updater from GitHub releases (`occ recognize:self-update`, admin section, optional automatic updates), `occ recognize:status`, `install.sh`, `scripts/install-gpu-debian.sh`
+- fix: damaged JPEGs are scanned through a tolerant ImageMagick fallback; clustering batch scaled for 512-d embeddings
+
 ## [12.1.0] - 2026-09-06 - CristianCasapu fork (Nextcloud 34)
 
 ### Added
