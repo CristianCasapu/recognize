@@ -83,7 +83,8 @@ final class ForkUpdater {
 				$entry['latestVersion'] = ltrim($tag, 'v');
 				$entry['asset'] = $asset;
 				$entry['published'] = $release['published_at'] ?? null;
-				$entry['available'] = $tag !== '' && $asset !== null && $tag !== $installedTag && ltrim($tag, 'v') !== $installed;
+				// git checkouts are updated with git; do not nag about them
+				$entry['available'] = !$entry['git'] && $tag !== '' && $asset !== null && $tag !== $installedTag && ltrim($tag, 'v') !== $installed;
 			} catch (\Throwable $e) {
 				$entry['error'] = $e->getMessage();
 			}

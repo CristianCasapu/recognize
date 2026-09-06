@@ -46,6 +46,18 @@ final class FaceClusterAnalyzer {
 	}
 
 	/**
+	 * A batch size tuned for 128-d face-api vectors, scaled down for higher-dimensional embeddings
+	 * so that the O(n²·d) HDBSCAN pass keeps roughly the same running time.
+	 */
+	public function scaleBatchSize(int $batchSize): int {
+		$dimensions = $this->backend->getParams()['dimensions'];
+		if ($batchSize <= 0 || $dimensions <= self::DIMENSIONS) {
+			return $batchSize;
+		}
+		return max(500, (int)round($batchSize * self::DIMENSIONS / $dimensions));
+	}
+
+	/**
 	 * Faces smaller than this fraction of the image are excluded from clustering,
 	 * configurable via faces.minDetectionSize (MIN_DETECTION_SIZE when unset or invalid).
 	 */

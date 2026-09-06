@@ -55,6 +55,8 @@ final class ClusterFacesJob extends QueuedJob {
 					$batchSize = (int)($memoryBytes * 5_000 / 120_000_0000);
 				}
 			}
+			// HDBSCAN is O(n²) in the embedding dimension: 512-d InsightFace vectors get a 4× smaller batch
+			$batchSize = $this->clusterAnalyzer->scaleBatchSize($batchSize);
 			$this->clusterAnalyzer->calculateClusters($userId, $batchSize);
 			// Fold unnamed clusters into the named cluster of the same person (no-op when faces.autoMergeThreshold is 0)
 			$this->clusterMerger->merge($userId);
