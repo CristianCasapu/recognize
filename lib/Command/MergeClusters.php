@@ -53,7 +53,7 @@ final class MergeClusters extends Command {
 		foreach ($userIds as $userId) {
 			$output->writeln('<info>User ' . $userId . ' (threshold ' . $threshold . ', ambiguity margin ' . FaceClusterMerger::AMBIGUITY_MARGIN . ')</info>');
 			try {
-				$candidates = $this->merger->findCandidates($userId, $threshold);
+				$candidates = array_merge($this->merger->findCandidates($userId, $threshold), $this->merger->findUnnamedPairs($userId, $threshold));
 			} catch (\OCP\DB\Exception $e) {
 				$this->logger->error($e->getMessage(), ['exception' => $e]);
 				return 1;
@@ -63,7 +63,7 @@ final class MergeClusters extends Command {
 				continue;
 			}
 			$table = new Table($output);
-			$table->setHeaders(['Unnamed cluster', 'Faces', 'Nearest named cluster', 'Distance', '2nd nearest', 'Distance', 'Photos together', 'Merge?']);
+			$table->setHeaders(['Unnamed cluster', 'Faces', 'Nearest cluster', 'Distance', '2nd nearest', 'Distance', 'Photos together', 'Merge?']);
 			foreach ($candidates as $candidate) {
 				$table->addRow([
 					'#' . $candidate['clusterId'],

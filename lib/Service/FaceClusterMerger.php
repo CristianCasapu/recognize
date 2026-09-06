@@ -121,7 +121,70 @@ final class FaceClusterMerger {
 	}
 
 	/**
-	 * Merge all mergeable candidates of a user.
+	 * Fragments of the same (still unnamed) person: pairs of unnamed clusters whose centroids are
+	 * closer than the threshold, unambiguous with respect to every other cluster, and that never
+	 * appear together in a photo. The smaller cluster is the one to merge into the larger.
+	 *
+	 * @return list<array{clusterId:int, size:int, targetId:int, targetTitle:string, distance:float, secondDistance:?float, secondTitle:?string, sharedFiles:int, mergeable:bool}>
+	 * @throws \OCP\DB\Exception
+	 */
+	public function findUnnamedPairs(string $userId, float $threshold): array {
+		$clusters = $this->faceClusters->findByUserId($userId);
+		$centroids = [];
+		$sizes = [];
+		foreach ($clusters as $cluster) {
+			$sample = $this->faceDetections->findByClusterIdLimited($cluster->getId(), self::SAMPLE_SIZE);
+			if (count($sample) < self::MIN_CLUSTER_SIZE) {
+				continue;
+			}
+			$centroids[$cluster->getId()] = ['cluster' => $cluster, 'centroid' => FaceClusterAnalyzer::calculateCentroidOfDetections($sample)];
+			$sizes[$cluster->getId()] = $this->faceDetections->countByClusterId($cluster->getId());
+		}
+		$candidates = [];
+		$done = [];
+		foreach ($centroids as $id => $entry) {
+			if ($entry['cluster']->getTitle() !== '') {
+				continue;
+			}
+			$distances = [];
+			foreach ($centroids as $otherId => $other) {
+				if ($otherId === $id) {
+					continue;
+				}
+				$distances[] = ['id' => $otherId, 'cluster' => $other['cluster'], 'distance' => $this->distance($entry['centroid'], $other['centroid'])];
+			}
+			usort($distances, static fn ($a, $b) => $a['distance'] <=> $b['distance']);
+			$best = $distances[0] ?? null;
+			if ($best === null || $best['cluster']->getTitle() !== '' || $best['distance'] >= $threshold) {
+				continue; // named targets are handled by findCandidates()
+			}
+			// merge the smaller into the larger, report each pair once
+			[$small, $large] = $sizes[$id] <= $sizes[$best['id']] ? [$id, $best['id']] : [$best['id'], $id];
+			if (isset($done[$small . ':' . $large])) {
+				continue;
+			}
+			$done[$small . ':' . $large] = true;
+			$second = $distances[1] ?? null;
+			$sharedFiles = $this->faceDetections->countSharedFiles($small, $large);
+			$candidates[] = [
+				'clusterId' => $small,
+				'size' => $sizes[$small],
+				'targetId' => $large,
+				'targetTitle' => '#' . $large . ' (' . $sizes[$large] . ' faces)',
+				'distance' => round($best['distance'], 3),
+				'secondDistance' => $second !== null ? round($second['distance'], 3) : null,
+				'secondTitle' => $second !== null ? ($second['cluster']->getTitle() !== '' ? $second['cluster']->getTitle() : '#' . $second['id']) : null,
+				'sharedFiles' => $sharedFiles,
+				'mergeable' => $sharedFiles === 0 && ($second === null || $second['distance'] - $best['distance'] >= self::AMBIGUITY_MARGIN),
+			];
+		}
+		usort($candidates, static fn ($a, $b) => $a['distance'] <=> $b['distance']);
+		return $candidates;
+	}
+
+	/**
+	 * Merge all mergeable candidates of a user: unnamed clusters into named ones first, then
+	 * fragments of unnamed people into each other.
 	 *
 	 * @return list<array{clusterId:int, size:int, targetId:int, targetTitle:string, distance:float}>
 	 * @throws \OCP\DB\Exception
@@ -132,10 +195,13 @@ final class FaceClusterMerger {
 			return [];
 		}
 		$merged = [];
-		foreach ($this->findCandidates($userId, $threshold) as $candidate) {
-			if (!$candidate['mergeable']) {
+		$candidates = array_merge($this->findCandidates($userId, $threshold), $this->findUnnamedPairs($userId, $threshold));
+		$gone = [];
+		foreach ($candidates as $candidate) {
+			if (!$candidate['mergeable'] || isset($gone[$candidate['clusterId']]) || isset($gone[$candidate['targetId']])) {
 				continue;
 			}
+			$gone[$candidate['clusterId']] = true;
 			$moved = $this->faceDetections->moveToCluster($candidate['clusterId'], $candidate['targetId']);
 			$this->faceClusters->delete($this->faceClusters->find($candidate['clusterId']));
 			$this->logger->info('Merged unnamed face cluster #' . $candidate['clusterId'] . ' (' . $moved . ' faces) into "' . $candidate['targetTitle'] . '" (#' . $candidate['targetId'] . '), centroid distance ' . $candidate['distance']);
