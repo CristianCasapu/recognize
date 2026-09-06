@@ -96,6 +96,7 @@ The app does not send any sensitive data to cloud providers or similar services.
 	</dependencies>
 	<background-jobs>
 		<job>OCA\Recognize\BackgroundJobs\MaintenanceJob</job>
+		<job>OCA\Recognize\BackgroundJobs\SimilarPhotosJob</job>
 	</background-jobs>
 
 	<repair-steps>
