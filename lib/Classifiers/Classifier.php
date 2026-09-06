@@ -331,8 +331,47 @@ abstract class Classifier {
 
 			return $path;
 		} catch (\Throwable $e) {
-			$this->logger->warning('Failed to generate preview of ' . $file->getId() . ' with dimension ' . $this->getTempFileDimension() . ' with gdlib: ' . $e->getMessage());
-			return $path;
+			$this->logger->debug('Failed to generate preview of ' . $file->getId() . ' with dimension ' . $this->getTempFileDimension() . ' with gdlib: ' . $e->getMessage());
+		}
+
+		// Last resort for damaged files (truncated JPEG segments, bad markers): ImageMagick decodes
+		// what it can where the Nextcloud preview provider and GD give up entirely.
+		if (class_exists(\Imagick::class)) {
+			try {
+				$this->logger->debug('generating preview of ' . $file->getId() . ' with dimension ' . $this->getTempFileDimension() . ' using imagick (tolerant)');
+				return $this->generatePreviewWithImagick($path);
+			} catch (\Throwable $e) {
+				$this->logger->warning('Failed to generate preview of ' . $file->getId() . ' with dimension ' . $this->getTempFileDimension() . ' (file is probably damaged): ' . $e->getMessage());
+				return $path;
+			}
+		}
+		$this->logger->warning('Failed to generate preview of ' . $file->getId() . ' with dimension ' . $this->getTempFileDimension() . ' with the preview provider and gdlib (file is probably damaged)');
+		return $path;
+	}
+
+	/**
+	 * @throws \OCA\Recognize\Exception\Exception
+	 */
+	public function generatePreviewWithImagick(string $path): string {
+		$image = new \Imagick();
+		try {
+			$image->readImage($path);
+			if (method_exists($image, 'autoOrient')) {
+				$image->autoOrient();
+			}
+			$dimension = $this->getTempFileDimension();
+			if ($image->getImageWidth() > $dimension || $image->getImageHeight() > $dimension) {
+				$image->thumbnailImage($dimension, $dimension, true);
+			}
+			$image->setImageFormat('jpeg');
+			$image->setImageCompressionQuality((int)\OCP\Server::get(IConfig::class)->getSystemValue('recognize.preview.quality', '100'));
+			$tmpname = $this->tempManager->getTemporaryFile('.jpg');
+			if ($tmpname === false || !$image->writeImage($tmpname)) {
+				throw new \OCA\Recognize\Exception\Exception('Could not write imagick preview to temp folder');
+			}
+			return $tmpname;
+		} finally {
+			$image->clear();
 		}
 	}
 
