@@ -75,6 +75,10 @@ final class SettingsService {
 		'faces.clusterSeparation' => '',
 		'faces.clusterEdgeLength' => '',
 		'faces.assignThreshold' => '',
+		// Zero-touch setup: install InsightFace in the background on install and switch to it while no faces exist
+		'faces.autoInstallInsightface' => 'true',
+		// Install new releases of the forked apps automatically (checked twice a day by the maintenance job)
+		'forkUpdates.auto' => 'false',
 	];
 
 	/** @var array<string,string>  */
@@ -121,6 +125,8 @@ final class SettingsService {
 		'faces.clusterSeparation',
 		'faces.clusterEdgeLength',
 		'faces.assignThreshold',
+		'faces.autoInstallInsightface',
+		'forkUpdates.auto',
 	];
 
 	private IAppConfig $config;
@@ -183,6 +189,13 @@ final class SettingsService {
 			$lazy = true;
 		}
 		$this->config->setAppValueString($key, $value, lazy: $lazy);
+	}
+
+	/**
+	 * Whether the admin (or a previous run) stored a value for this setting, as opposed to the default applying.
+	 */
+	public function isSet(string $key): bool {
+		return $this->config->hasAppKey($key, in_array($key, self::LAZY_SETTINGS, true));
 	}
 
 	/**

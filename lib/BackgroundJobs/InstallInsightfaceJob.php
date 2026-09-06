@@ -7,7 +7,10 @@
 declare(strict_types=1);
 namespace OCA\Recognize\BackgroundJobs;
 
+use OCA\Recognize\Db\FaceDetectionMapper;
 use OCA\Recognize\Service\AdminNotifier;
+use OCA\Recognize\Service\FaceBackend;
+use OCA\Recognize\Service\FaceBackendSwitcher;
 use OCA\Recognize\Service\InsightfaceInstaller;
 use OCA\Recognize\Service\Logger;
 use OCA\Recognize\Service\SettingsService;
@@ -25,6 +28,9 @@ final class InstallInsightfaceJob extends QueuedJob {
 		private InsightfaceInstaller $installer,
 		private SettingsService $settingsService,
 		private AdminNotifier $adminNotifier,
+		private FaceBackend $backend,
+		private FaceBackendSwitcher $switcher,
+		private FaceDetectionMapper $faceDetections,
 	) {
 		parent::__construct($time);
 		$this->setAllowParallelRuns(false);
@@ -42,6 +48,13 @@ final class InstallInsightfaceJob extends QueuedJob {
 		};
 		try {
 			$this->installer->install((bool)($argument['gpu'] ?? true), null, $log);
+			// Zero-touch: nothing detected with the built-in model yet → use the better backend right away
+			if (!$this->backend->isInsightface()
+				&& $this->settingsService->getSetting('faces.autoInstallInsightface') === 'true'
+				&& $this->faceDetections->countAll() === 0) {
+				$this->switcher->switchTo(FaceBackend::INSIGHTFACE);
+				$log('No faces detected yet: switched the face backend to InsightFace');
+			}
 			$lines[] = '[' . date('c') . '] done';
 			$this->settingsService->setRawSetting(InsightfaceInstaller::LOG_SETTING, json_encode(['running' => false, 'ok' => true, 'lines' => $lines]));
 		} catch (\Throwable $e) {

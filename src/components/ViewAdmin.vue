@@ -637,6 +637,11 @@ ldconfig -p | grep -E 'cudnn|cudart'          # both must be listed</code></pre>
 				<button class="button" :disabled="updateBusy" @click="getForkUpdates(true)">
 					{{ t('recognize', 'Check again') }}
 				</button>
+				<p>
+					<NcCheckboxRadioSwitch :checked.sync="settings['forkUpdates.auto']" type="switch" @update:checked="onChange">
+						{{ t('recognize', 'Install new releases automatically (checked twice a day by the maintenance job; git checkouts are skipped)') }}
+					</NcCheckboxRadioSwitch>
+				</p>
 			</template>
 		</NcSettingsSection>
 		<NcSettingsSection :name="t('recognize', 'Terminal commands') ">
@@ -680,9 +685,9 @@ import { generateUrl } from '@nextcloud/router'
 import { loadState } from '@nextcloud/initial-state'
 import humanizeDuration from 'humanize-duration'
 
-const SETTINGS = ['tensorflow.cores', 'tensorflow.gpu', 'tensorflow.purejs', 'tensorflow.ldLibraryPath', 'python_binary', 'imagenet.enabled', 'landmarks.enabled', 'faces.enabled', 'musicnn.enabled', 'movinet.enabled', 'node_binary', 'ffmpeg_binary', 'faces.status', 'imagenet.status', 'landmarks.status', 'movinet.status', 'musicnn.status', 'faces.lastFile', 'imagenet.lastFile', 'landmarks.lastFile', 'movinet.lastFile', 'musicnn.lastFile', 'faces.batchSize', 'imagenet.batchSize', 'landmarks.batchSize', 'movinet.batchSize', 'musicnn.batchSize', 'faces.previewDimension', 'faces.tiling', 'faces.minDetectionSize', 'faces.autoMergeThreshold', 'clusterFaces.status', 'clusterFaces.lastRun', 'nice_binary', 'nice_value', 'concurrency.enabled', 'notifications.enabled']
+const SETTINGS = ['tensorflow.cores', 'tensorflow.gpu', 'tensorflow.purejs', 'tensorflow.ldLibraryPath', 'python_binary', 'imagenet.enabled', 'landmarks.enabled', 'faces.enabled', 'musicnn.enabled', 'movinet.enabled', 'node_binary', 'ffmpeg_binary', 'faces.status', 'imagenet.status', 'landmarks.status', 'movinet.status', 'musicnn.status', 'faces.lastFile', 'imagenet.lastFile', 'landmarks.lastFile', 'movinet.lastFile', 'musicnn.lastFile', 'faces.batchSize', 'imagenet.batchSize', 'landmarks.batchSize', 'movinet.batchSize', 'musicnn.batchSize', 'faces.previewDimension', 'faces.tiling', 'faces.minDetectionSize', 'faces.autoMergeThreshold', 'clusterFaces.status', 'clusterFaces.lastRun', 'nice_binary', 'nice_value', 'concurrency.enabled', 'notifications.enabled', 'forkUpdates.auto', 'faces.autoInstallInsightface']
 
-const BOOLEAN_SETTINGS = ['tensorflow.gpu', 'tensorflow.purejs', 'imagenet.enabled', 'landmarks.enabled', 'faces.enabled', 'musicnn.enabled', 'movinet.enabled', 'faces.status', 'imagenet.status', 'landmarks.status', 'movinet.status', 'musicnn.status', 'faces.lastFile', 'imagenet.lastFile', 'landmarks.lastFile', 'movinet.lastFile', 'musicnn.lastFile', 'clusterFaces.status', 'concurrency.enabled', 'faces.tiling', 'notifications.enabled']
+const BOOLEAN_SETTINGS = ['tensorflow.gpu', 'tensorflow.purejs', 'imagenet.enabled', 'landmarks.enabled', 'faces.enabled', 'musicnn.enabled', 'movinet.enabled', 'faces.status', 'imagenet.status', 'landmarks.status', 'movinet.status', 'musicnn.status', 'faces.lastFile', 'imagenet.lastFile', 'landmarks.lastFile', 'movinet.lastFile', 'musicnn.lastFile', 'clusterFaces.status', 'concurrency.enabled', 'faces.tiling', 'notifications.enabled', 'forkUpdates.auto', 'faces.autoInstallInsightface']
 
 const MAX_RELATIVE_DATE = 1000 * 60 * 60 * 24 * 7 // one week
 

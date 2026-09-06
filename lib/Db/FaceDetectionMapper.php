@@ -395,6 +395,19 @@ final class FaceDetectionMapper extends QBMapper {
 	/**
 	 * @throws \OCP\DB\Exception
 	 */
+	public function countAll(): int {
+		$qb = $this->db->getQueryBuilder();
+		$qb->select($qb->func()->count('id'))->from('recognize_face_detections');
+		$result = $qb->executeQuery();
+		/** @var int|string $count */
+		$count = $result->fetch(\PDO::FETCH_COLUMN);
+		$result->closeCursor();
+		return (int)$count;
+	}
+
+	/**
+	 * @throws \OCP\DB\Exception
+	 */
 	public function countByClusterId(int $clusterId): int {
 		$qb = $this->db->getQueryBuilder();
 		$qb->select($qb->func()->count('id'))
