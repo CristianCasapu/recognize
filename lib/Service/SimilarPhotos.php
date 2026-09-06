@@ -57,6 +57,8 @@ final class SimilarPhotos {
 		}
 		$fileIds = array_keys($ints);
 		$n = count($fileIds);
+		$values = array_values($ints);
+		$table = self::popcountTable();
 
 		// union-find
 		$parent = array_combine($fileIds, $fileIds);
@@ -78,9 +80,11 @@ final class SimilarPhotos {
 
 		$pairs = 0;
 		for ($i = 0; $i < $n; $i++) {
-			$a = $ints[$fileIds[$i]];
+			$a = $values[$i];
 			for ($j = $i + 1; $j < $n; $j++) {
-				$distance = self::popcount($a ^ $ints[$fileIds[$j]]);
+				// Hamming distance of the two 64-bit hashes with a 16-bit lookup table (hot loop: ~n²/2 iterations)
+				$x = $a ^ $values[$j];
+				$distance = $table[$x & 0xffff] + $table[($x >> 16) & 0xffff] + $table[($x >> 32) & 0xffff] + $table[($x >> 48) & 0xffff];
 				if ($distance > self::HASH_LOOSE) {
 					continue;
 				}
@@ -135,14 +139,18 @@ final class SimilarPhotos {
 		$this->cacheFactory->createDistributed('recognize_similar')->remove(self::CACHE_KEY);
 	}
 
-	private static function popcount(int $x): int {
-		// Kernighan; x may be negative (unsigned 64-bit bit pattern), loop ends after at most 64 steps
-		$count = 0;
-		while ($x !== 0) {
-			$x &= $x - 1;
-			$count++;
+	/**
+	 * @return list<int> number of set bits for every 16-bit value
+	 */
+	private static function popcountTable(): array {
+		static $table = null;
+		if ($table === null) {
+			$table = [0];
+			for ($i = 1; $i < 65536; $i++) {
+				$table[$i] = $table[$i >> 1] + ($i & 1);
+			}
 		}
-		return $count;
+		return $table;
 	}
 
 	/**
