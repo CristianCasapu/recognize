@@ -138,7 +138,12 @@ final class AdminController extends Controller {
 			$this->clusterMapper->deleteAll();
 			$this->detectionMapper->deleteAll();
 			\OCP\Server::get(\OCA\Recognize\Service\FaceProgress::class)->reset();
-			$this->errorLog->log('warning', 'All face detections and clusters were reset from the admin page', 'names of ' . $snapshot['titles'] . ' people saved to ' . $snapshot['path']);
+			// Chain: a reset is always followed by a new scan of all photos for faces (then clustering,
+			// merging, name restore, burst tracking and the Memories person albums follow automatically)
+			if ($this->settingsService->getSetting('faces.enabled') === 'true') {
+				$this->jobList->add(SchedulerJob::class, ['models' => [\OCA\Recognize\Classifiers\Images\ClusteringFaceClassifier::MODEL_NAME]]);
+			}
+			$this->errorLog->log('warning', 'All face detections and clusters were reset from the admin page; a new face scan was scheduled', 'names of ' . $snapshot['titles'] . ' people saved to ' . $snapshot['path']);
 		} catch (\Throwable $e) {
 			return new JSONResponse(['message' => $e->getMessage()], Http::STATUS_INTERNAL_SERVER_ERROR);
 		}

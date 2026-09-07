@@ -470,6 +470,18 @@ final class FaceDetectionMapper extends QBMapper {
 		return (int) $count;
 	}
 
+	/** Faces of one user big enough to be clustered that have not been clustered yet */
+	public function countUnclusteredForUser(string $userId): int {
+		$qb = $this->db->getQueryBuilder();
+		$qb->select($qb->func()->count('id'))
+			->from('recognize_face_detections')
+			->where($qb->expr()->eq('user_id', $qb->createPositionalParameter($userId)))
+			->andWhere($qb->expr()->isNull('cluster_id'))
+			->andWhere($qb->expr()->gte('height', $qb->createPositionalParameter($this->getMinDetectionSize())))
+			->andWhere($qb->expr()->gte('width', $qb->createPositionalParameter($this->getMinDetectionSize())));
+		return (int)$qb->executeQuery()->fetchOne();
+	}
+
 	/**
 	 * @return array<string>
 	 * @throws \OCP\DB\Exception

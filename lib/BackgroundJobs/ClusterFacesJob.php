@@ -65,6 +65,12 @@ final class ClusterFacesJob extends QueuedJob {
 			\OCP\Server::get(FaceTracker::class)->track($userId);
 			// After a backend switch: hand the saved person names to the matching new clusters
 			$this->nameSnapshot->restorePending();
+			// Chain: one run handles one batch — re-queue ourselves until the backlog is gone
+			$remaining = \OCP\Server::get(\OCA\Recognize\Db\FaceDetectionMapper::class)->countUnclusteredForUser($userId);
+			if ($remaining > 0) {
+				$this->logger->debug('Clustering: ' . $remaining . ' faces still waiting for ' . $userId . ', scheduling the next batch');
+				$this->jobList->add(self::class, $argument);
+			}
 		} catch (\Throwable $e) {
 			$this->settingsService->setSetting('clusterFaces.status', 'false');
 			$this->logger->error('Failed to calculate face clusters', ['exception' => $e]);
