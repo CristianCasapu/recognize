@@ -9,7 +9,7 @@ namespace OCA\Recognize\Service;
 
 use OCA\Recognize\Db\FaceDetectionMapper;
 use OCP\IDBConnection;
-use OCARecognizeVendorRubixMLKernelsDistanceuclidean;
+use OCA\Recognize\Vendor\Rubix\ML\Kernels\Distance\Euclidean;
 
 /**
  * Face tracking across bursts: photos of the same folder taken a few seconds apart show the
