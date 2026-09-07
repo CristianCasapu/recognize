@@ -9,6 +9,7 @@ namespace OCA\Recognize\Command;
 
 use OCA\Recognize\Db\FaceClusterMapper;
 use OCA\Recognize\Db\FaceDetectionMapper;
+use OCA\Recognize\Service\FaceNameSnapshot;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -17,7 +18,7 @@ final class ResetFaces extends Command {
 	private FaceDetectionMapper $faceDetectionMapper;
 	private FaceClusterMapper $clusterMapper;
 
-	public function __construct(FaceDetectionMapper $faceDetectionMapper, FaceClusterMapper $clusterMapper) {
+	public function __construct(FaceDetectionMapper $faceDetectionMapper, FaceClusterMapper $clusterMapper, private FaceNameSnapshot $faceNameSnapshot) {
 		parent::__construct();
 		$this->faceDetectionMapper = $faceDetectionMapper;
 		$this->clusterMapper = $clusterMapper;
@@ -43,6 +44,8 @@ final class ResetFaces extends Command {
 	 */
 	protected function execute(InputInterface $input, OutputInterface $output): int {
 		try {
+			$snapshot = $this->faceNameSnapshot->create();
+			$output->writeln('Names of ' . $snapshot['titles'] . ' people saved to ' . $snapshot['path'] . ' (restored automatically after the next clustering)');
 			$this->clusterMapper->deleteAll();
 			$this->faceDetectionMapper->deleteAll();
 		} catch (\Exception $ex) {

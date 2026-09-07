@@ -465,7 +465,7 @@ occ recognize:switch-face-backend insightface</code></pre>
 				{{ t('recognize', 'Reset tags for classified files') }}
 			</button>
 			<p>&nbsp;</p>
-			<p>{{ t('recognize', 'Click the button below to remove all face detections from all files that have been classified so far.') }}</p>
+			<p>{{ t('recognize', 'Click the button below to remove all face detections from all files that have been classified so far. Only do this on purpose: all photos are scanned again afterwards. The names of people are saved and restored automatically; manual face tags are lost.') }}</p>
 			<button class="button" @click="onResetFaces">
 				{{ t('recognize', 'Reset faces for classified files') }}
 			</button>
@@ -932,6 +932,17 @@ export default {
 			}, 3000)
 		},
 		async onResetFaces() {
+			const confirmed = await new Promise((resolve) => {
+				OC.dialogs.confirm(
+					this.t('recognize', 'This removes ALL detected faces and people. Every photo has to be scanned again (hours on a large library). The names you gave to people are saved now and restored automatically after the photos have been scanned and clustered again; manual face tags are lost. Continue?'),
+					this.t('recognize', 'Reset all faces'),
+					resolve,
+					true,
+				)
+			})
+			if (!confirmed) {
+				return
+			}
 			this.loading = true
 			await axios.get(generateUrl('/apps/recognize/admin/resetFaces'))
 			this.loading = false
