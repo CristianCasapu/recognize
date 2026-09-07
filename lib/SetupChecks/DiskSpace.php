@@ -67,10 +67,13 @@ final class DiskSpace implements ISetupCheck {
 				continue;
 			}
 			$seen[$key] = true;
-			$text = $label . ' (' . $path . '): ' . Util::humanFileSize((int)$free) . ' ' . $this->l10n->t('free');
+			$text = $label . ' (' . $path . '): ' . Util::humanFileSize((int)$free) . ' ' . $this->l10n->t('free') . ' (' . (int)round(100 * $free / max(1, $total)) . ' %)';
+			// Small dedicated filesystems (a 2 GB /tmp volume) are fine while they are mostly empty:
+			// warn on absolute free space only when the filesystem is also more than half full.
+			$mostlyFull = $free / max(1, $total) < 0.5;
 			if ($free < self::ERROR_BYTES) {
 				$errors[] = $text;
-			} elseif ($free < self::WARNING_BYTES) {
+			} elseif ($free < self::WARNING_BYTES && $mostlyFull) {
 				$warnings[] = $text;
 			}
 		}

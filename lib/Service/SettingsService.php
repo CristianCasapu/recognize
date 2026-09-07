@@ -236,6 +236,17 @@ final class SettingsService {
 	 */
 	public function getClassifierEnvironment(): array {
 		$env = [];
+		// Node.js / Python helpers write scratch files where PHP does (Nextcloud's "tempdirectory"), not in /tmp
+		try {
+			$tmp = rtrim((string)\OC::$server->get(\OCP\ITempManager::class)->getTempBaseDir(), '/');
+			if ($tmp !== '' && is_dir($tmp) && is_writable($tmp)) {
+				$env['TMPDIR'] = $tmp;
+				$env['TEMP'] = $tmp;
+				$env['TMP'] = $tmp;
+				$env['MAGICK_TEMPORARY_PATH'] = $tmp;
+			}
+		} catch (\Throwable $e) {
+		}
 		if ($this->getSetting('tensorflow.gpu') === 'true') {
 			$env['RECOGNIZE_GPU'] = 'true';
 		}

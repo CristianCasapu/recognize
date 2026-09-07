@@ -61,7 +61,15 @@ final class ClipModel {
 	 * @return array<string,string>
 	 */
 	public function getEnvironment(): array {
-		return ['RECOGNIZE_CLIP_MODEL_DIR' => $this->getModelDir()];
+		$env = ['RECOGNIZE_CLIP_MODEL_DIR' => $this->getModelDir()];
+		try {
+			$tmp = rtrim((string)\OC::$server->get(\OCP\ITempManager::class)->getTempBaseDir(), '/');
+			if ($tmp !== '' && is_dir($tmp) && is_writable($tmp)) {
+				$env['TMPDIR'] = $tmp;
+			}
+		} catch (\Throwable $e) {
+		}
+		return $env;
 	}
 
 	/**

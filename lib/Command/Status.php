@@ -57,7 +57,13 @@ final class Status extends Command {
 	}
 
 	protected function execute(InputInterface $input, OutputInterface $output): int {
-		$fmt = static fn (string $ts): string => (int)$ts > 0 ? date('Y-m-d H:i:s', (int)$ts) : 'never';
+		// local time of the server (the log and the Nextcloud UI use it too)
+		$tz = new \DateTimeZone(date_default_timezone_get() ?: 'UTC');
+		try {
+			$tz = new \DateTimeZone((string)(\OC::$server->get(\OCP\IConfig::class)->getSystemValue('default_timezone', '') ?: (trim((string)@file_get_contents('/etc/timezone')) ?: $tz->getName())));
+		} catch (\Throwable $e) {
+		}
+		$fmt = static fn (string $ts): string => (int)$ts > 0 ? (new \DateTimeImmutable('@' . (int)$ts))->setTimezone($tz)->format('Y-m-d H:i:s T') : 'never';
 
 		$output->writeln('<info>Background processing</info>');
 		$mode = $this->appConfig->getValueString('core', 'backgroundjobs_mode', 'ajax');
