@@ -59,5 +59,16 @@ return [
 		['name' => 'admin#forkUpdate', 'url' => '/admin/updates/{app}', 'verb' => 'POST'],
 		// user API (Memories / Photos person pages)
 		['name' => 'faces#findMore', 'url' => '/api/faces/{clusterId}/find', 'verb' => 'POST'],
+		// manual tagging / review (Memories "People in this photo", "Review unnamed people")
+		['name' => 'faces#fileFaces', 'url' => '/api/files/{fileId}/faces', 'verb' => 'GET'],
+		['name' => 'faces#unignoreFile', 'url' => '/api/files/{fileId}/faces/unignore', 'verb' => 'POST'],
+		['name' => 'faces#assign', 'url' => '/api/faces/detections/{detectionId}/assign', 'verb' => 'POST'],
+		['name' => 'faces#detach', 'url' => '/api/faces/detections/{detectionId}/detach', 'verb' => 'POST'],
+		['name' => 'faces#ignoreDetection', 'url' => '/api/faces/detections/{detectionId}/ignore', 'verb' => 'POST'],
+		['name' => 'faces#review', 'url' => '/api/faces/review', 'verb' => 'GET'],
+		['name' => 'faces#track', 'url' => '/api/faces/track', 'verb' => 'POST'],
+		['name' => 'faces#rename', 'url' => '/api/faces/{clusterId}', 'verb' => 'PUT'],
+		['name' => 'faces#mergeInto', 'url' => '/api/faces/{clusterId}/merge/{targetId}', 'verb' => 'POST'],
+		['name' => 'faces#ignoreCluster', 'url' => '/api/faces/{clusterId}/ignore', 'verb' => 'POST'],
 	],
 ];

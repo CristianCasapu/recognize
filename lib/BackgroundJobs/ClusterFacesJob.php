@@ -10,6 +10,7 @@ namespace OCA\Recognize\BackgroundJobs;
 use OCA\Recognize\Service\AdminNotifier;
 use OCA\Recognize\Service\FaceClusterAnalyzer;
 use OCA\Recognize\Service\FaceClusterMerger;
+use OCA\Recognize\Service\FaceTracker;
 use OCA\Recognize\Service\FaceNameSnapshot;
 use OCA\Recognize\Service\Logger;
 use OCA\Recognize\Service\SettingsService;
@@ -60,6 +61,8 @@ final class ClusterFacesJob extends QueuedJob {
 			$this->clusterAnalyzer->calculateClusters($userId, $batchSize);
 			// Fold unnamed clusters into the named cluster of the same person (no-op when faces.autoMergeThreshold is 0)
 			$this->clusterMerger->merge($userId);
+			// Bursts: hand known people to the unassigned (often small) faces of neighbouring frames
+			\OCP\Server::get(FaceTracker::class)->track($userId);
 			// After a backend switch: hand the saved person names to the matching new clusters
 			$this->nameSnapshot->restorePending();
 		} catch (\Throwable $e) {
