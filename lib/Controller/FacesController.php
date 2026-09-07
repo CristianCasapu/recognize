@@ -63,6 +63,12 @@ final class FacesController extends Controller {
 		return new JSONResponse($result);
 	}
 
+	/** Live face-scan progress (People page banner). */
+	#[NoAdminRequired]
+	public function progress(): JSONResponse {
+		return $this->guard(fn () => \OCP\Server::get(\OCA\Recognize\Service\FaceProgress::class)->status());
+	}
+
 	/** Faces in a photo, with the person each one is assigned to. */
 	#[NoAdminRequired]
 	public function fileFaces(int $fileId): JSONResponse {

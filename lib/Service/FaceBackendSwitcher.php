@@ -49,6 +49,7 @@ final class FaceBackendSwitcher {
 		$this->jobList->remove(ClusterFacesJob::class);
 		$this->faceClusters->deleteAll();
 		$this->faceDetections->deleteAll();
+		\OCP\Server::get(FaceProgress::class)->reset();
 
 		$this->settingsService->setSetting('faces.backend', $backend);
 		$this->settingsService->setSetting('faces.status', 'null');

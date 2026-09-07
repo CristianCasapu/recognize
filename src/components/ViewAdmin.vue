@@ -69,6 +69,16 @@
 		</NcSettingsSection>
 		<NcSettingsSection :name="t('recognize', 'Face recognition')">
 			<template v-if="settings['faces.enabled']">
+				<NcNoteCard v-if="faceProgress && faceProgress.running" show-alert type="info">
+					<strong>{{ t('recognize', 'Scanning photos for faces: {scanned} of {total} ({percent} %)', { scanned: faceProgress.scanned, total: faceProgress.total, percent: faceProgress.percent ?? 0 }) }}</strong>
+					— {{ t('recognize', '{rate} photos/min', { rate: faceProgress.ratePerMinute }) }}<span v-if="faceProgress.etaSeconds !== null">, {{ t('recognize', 'about {min} min left', { min: Math.ceil(faceProgress.etaSeconds / 60) }) }}</span>.
+					{{ t('recognize', '{faces} faces in {photos} photos so far, {waiting} waiting for clustering, {clusters} people ({named} named).', { faces: faceProgress.faces, photos: faceProgress.photosWithFaces, waiting: faceProgress.waitingForClustering, clusters: faceProgress.clusters, named: faceProgress.named }) }}
+					<progress :value="faceProgress.percent ?? 0" max="100" style="width: 100%" />
+				</NcNoteCard>
+				<NcNoteCard v-else-if="faceProgress" show-alert type="success">
+					{{ t('recognize', 'No face scan running. {faces} faces in {photos} photos, {clusters} people ({named} named); {waiting} faces waiting for clustering, {queued} photos queued.', { faces: faceProgress.faces, photos: faceProgress.photosWithFaces, clusters: faceProgress.clusters, named: faceProgress.named, waiting: faceProgress.waitingForClustering, queued: faceProgress.queued }) }}
+					<span v-if="faceProgress.lastActivity">{{ t('recognize', 'Last photo scanned: {when}.', { when: new Date(faceProgress.lastActivity * 1000).toLocaleString() }) }}</span>
+				</NcNoteCard>
 				<NcNoteCard v-if="settings['faces.status'] === true" show-alert type="success">
 					{{ t('recognize', 'Face recognition is working. ') }}
 				</NcNoteCard>
@@ -777,6 +787,7 @@ export default {
 
 	data() {
 		return {
+			faceProgress: null,
 			loading: false,
 			success: false,
 			error: '',
@@ -872,6 +883,8 @@ export default {
 		this.getJobsStatus('movinet')
 		this.getJobsStatus('musicnn')
 		this.getJobsStatus('clusterFaces')
+		this.getFaceProgress()
+		setInterval(() => this.getFaceProgress(), 10000)
 
 		setInterval(async () => {
 			this.getCount()
@@ -959,6 +972,14 @@ export default {
 			setTimeout(() => {
 				this.success = false
 			}, 3000)
+		},
+		async getFaceProgress() {
+			try {
+				const resp = await axios.get(generateUrl('/apps/recognize/admin/faces/progress'))
+				this.faceProgress = resp.data
+			} catch (e) {
+				console.error(e)
+			}
 		},
 		async getCount() {
 			const resp = await axios.get(generateUrl('/apps/recognize/admin/countQueued'))

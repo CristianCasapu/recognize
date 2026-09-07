@@ -126,12 +126,18 @@ final class AdminController extends Controller {
 		return new JSONResponse([]);
 	}
 
+	/** Live face-scan progress for the admin page */
+	public function faceProgress(): JSONResponse {
+		return new JSONResponse(\OCP\Server::get(\OCA\Recognize\Service\FaceProgress::class)->status());
+	}
+
 	public function resetFaces(): JSONResponse {
 		try {
 			// Never lose the names people were given: snapshot first, restored after the next clustering
 			$snapshot = $this->faceNameSnapshot->create();
 			$this->clusterMapper->deleteAll();
 			$this->detectionMapper->deleteAll();
+			\OCP\Server::get(\OCA\Recognize\Service\FaceProgress::class)->reset();
 			$this->errorLog->log('warning', 'All face detections and clusters were reset from the admin page', 'names of ' . $snapshot['titles'] . ' people saved to ' . $snapshot['path']);
 		} catch (\Throwable $e) {
 			return new JSONResponse(['message' => $e->getMessage()], Http::STATUS_INTERNAL_SERVER_ERROR);

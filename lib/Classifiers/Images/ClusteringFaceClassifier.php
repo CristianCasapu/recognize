@@ -178,6 +178,10 @@ final class ClusteringFaceClassifier extends Classifier {
 		 */
 		foreach ($classifierProcess as $queueFile => $faces) {
 			$this->logger->debug('Face results for ' . $queueFile->getFileId() . ' are in');
+			try {
+				\OCP\Server::get(\OCA\Recognize\Service\FaceProgress::class)->tick(count($faces));
+			} catch (\Throwable $e) {
+			}
 			foreach ($faces as $face) {
 				if ($face['score'] < $params['minScore']) {
 					$this->logger->debug('Face score too low. continuing with next face.');

@@ -68,6 +68,11 @@ final class Status extends Command {
 		$output->writeln('<info>Background processing</info>');
 		$mode = $this->appConfig->getValueString('core', 'backgroundjobs_mode', 'ajax');
 		$lastCron = $this->appConfig->getValueInt('core', 'lastcron', 0);
+		try {
+			$pr = \OCP\Server::get(\OCA\Recognize\Service\FaceProgress::class)->status();
+			$output->writeln('  face scan: ' . ($pr['running'] ? '<info>RUNNING</info>' : 'idle') . ' — session: ' . $pr['scanned'] . ' photos scanned' . ($pr['percent'] !== null ? ' (' . $pr['percent'] . ' % of ' . $pr['total'] . ' images)' : '') . ', ' . $pr['ratePerMinute'] . '/min' . ($pr['etaSeconds'] !== null ? ', ~' . (int)ceil($pr['etaSeconds'] / 60) . ' min left' : '') . ($pr['secondsSinceActivity'] !== null ? ', last activity ' . $pr['secondsSinceActivity'] . ' s ago' : ''));
+		} catch (\Throwable $e) {
+		}
 		$output->writeln('  cron mode: ' . $mode . ($mode !== 'cron' ? ' (must be "cron")' : '') . ', last cron run: ' . $fmt((string)$lastCron));
 		$output->writeln('  pending file events (new/changed files waiting to be queued): ' . $this->countRows('recognize_fs_creations') . ' created, ' . $this->countRows('recognize_fs_moves') . ' moved, ' . $this->countRows('recognize_fs_deletions') . ' deleted');
 		$output->writeln('  scheduled jobs: crawl=' . $this->countJobs(SchedulerJob::class) + $this->countJobs(StorageCrawlJob::class)
