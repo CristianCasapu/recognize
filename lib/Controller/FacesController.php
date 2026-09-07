@@ -63,6 +63,15 @@ final class FacesController extends Controller {
 		return new JSONResponse($result);
 	}
 
+	/**
+	 * Add a face the detector missed: the drawn box is handed to InsightFace, which
+	 * returns the exact face and its embedding; optionally assign it to a person.
+	 */
+	#[NoAdminRequired]
+	public function addFace(int $fileId, float $x = 0, float $y = 0, float $width = 0, float $height = 0, ?int $cluster_id = null, ?string $title = null): JSONResponse {
+		return $this->guard(fn (string $uid) => $this->tagging->addFace($uid, $fileId, $x, $y, $width, $height, $cluster_id, $title));
+	}
+
 	/** Live face-scan progress (People page banner). */
 	#[NoAdminRequired]
 	public function progress(): JSONResponse {
@@ -141,6 +150,8 @@ final class FacesController extends Controller {
 			return new JSONResponse(['message' => $e->getMessage() ?: 'Not found'], Http::STATUS_NOT_FOUND);
 		} catch (\InvalidArgumentException $e) {
 			return new JSONResponse(['message' => $e->getMessage()], Http::STATUS_CONFLICT);
+		} catch (\RuntimeException $e) {
+			return new JSONResponse(['message' => $e->getMessage()], Http::STATUS_BAD_REQUEST);
 		} catch (\Throwable $e) {
 			return new JSONResponse(['message' => $e->getMessage()], Http::STATUS_INTERNAL_SERVER_ERROR);
 		}

@@ -13,7 +13,12 @@ use OCA\Recognize\Db\FaceDetection;
 use OCA\Recognize\Db\FaceDetectionMapper;
 use OCP\AppFramework\Db\DoesNotExistException;
 use OCP\DB\QueryBuilder\IQueryBuilder;
+use OCP\Files\File;
+use OCP\Files\IRootFolder;
 use OCP\IDBConnection;
+use OCP\IPreview;
+use OCP\ITempManager;
+use Symfony\Component\Process\Process;
 
 /**
  * Manual tagging and review of people: faces of a photo, assign / detach / ignore a face,
@@ -33,8 +38,140 @@ final class FaceTagging {
 		private FaceDetectionMapper $detections,
 		private FaceClusterMapper $clusters,
 		private FaceClusterMerger $merger,
+		private FaceBackend $backend,
+		private SettingsService $settings,
+		private IRootFolder $rootFolder,
+		private IPreview $preview,
+		private ITempManager $tempManager,
 		private Logger $logger,
 	) {
+	}
+
+	/**
+	 * Add a face the detector missed: the region drawn by the user is handed to InsightFace,
+	 * which returns the exact face box and its embedding, so the new face behaves like any
+	 * other one (clustering, "find this person", merging).
+	 *
+	 * @param float $x,$y,$width,$height relative coordinates (0..1) of the drawn box
+	 *
+	 * @return array{detection_id:int, cluster_id:int, title:string, created:bool, score:float, box:array{x:float,y:float,width:float,height:float}}
+	 * @throws \InvalidArgumentException|\RuntimeException
+	 */
+	public function addFace(string $userId, int $fileId, float $x, float $y, float $width, float $height, ?int $clusterId, ?string $title): array {
+		if (!$this->backend->isInsightface()) {
+			throw new \RuntimeException('Adding faces by hand needs the InsightFace backend');
+		}
+		if ($width <= 0.001 || $height <= 0.001) {
+			throw new \InvalidArgumentException('The selected area is too small');
+		}
+		$node = $this->rootFolder->getUserFolder($userId)->getFirstNodeById($fileId);
+		if (!$node instanceof File) {
+			throw new DoesNotExistException('Unknown file');
+		}
+
+		$face = $this->detectInBox($node, $x, $y, $width, $height);
+		if ($face === null) {
+			throw new \InvalidArgumentException('No face was found in the selected area — try a tighter box around the face');
+		}
+
+		// a face already there (the detector found it too): reuse it instead of duplicating
+		$existing = null;
+		foreach ($this->detections->findByFileIdAndUser($fileId, $userId) as $detection) {
+			$a = [$detection->getX(), $detection->getY(), $detection->getWidth(), $detection->getHeight()];
+			$b = [$face['x'], $face['y'], $face['width'], $face['height']];
+			if (self::iou($a, $b) > 0.5) {
+				$existing = $detection;
+				break;
+			}
+		}
+
+		if ($existing === null) {
+			$detection = new FaceDetection();
+			$detection->setFileId($fileId);
+			$detection->setUserId($userId);
+			$detection->setX($face['x']);
+			$detection->setY($face['y']);
+			$detection->setWidth($face['width']);
+			$detection->setHeight($face['height']);
+			$detection->setVector($face['vector']);
+			$detection->setClusterId(self::UNASSIGNED);
+			$detection->setThreshold(0.0);
+			$existing = $this->detections->insertWithoutDeduplication($detection);
+			$this->logger->info('Manually added face #' . $existing->getId() . ' to file ' . $fileId . ' (detector score ' . round($face['score'], 2) . ')');
+		}
+
+		$assigned = ['cluster_id' => 0, 'title' => '', 'created' => false];
+		if ($clusterId !== null || ($title !== null && trim($title) !== '')) {
+			$assigned = $this->assign($userId, $existing->getId(), $clusterId, $title);
+		}
+
+		return [
+			'detection_id' => $existing->getId(),
+			'cluster_id' => $assigned['cluster_id'],
+			'title' => $assigned['title'],
+			'created' => $assigned['created'],
+			'score' => round($face['score'], 3),
+			'box' => ['x' => $face['x'], 'y' => $face['y'], 'width' => $face['width'], 'height' => $face['height']],
+		];
+	}
+
+	/**
+	 * Run the detector inside the drawn region.
+	 *
+	 * @return array{x:float,y:float,width:float,height:float,vector:list<float>,score:float}|null
+	 */
+	private function detectInBox(File $node, float $x, float $y, float $width, float $height): ?array {
+		$path = $this->localImagePath($node);
+		$script = dirname(__DIR__, 2) . '/src/face_at_box.py';
+		$env = array_merge(
+			$this->settings->getClassifierEnvironment(),
+			$this->backend->getInsightfaceEnvironment(),
+			['TMPDIR' => (string)$this->tempManager->getTempBaseDir()],
+		);
+		$process = new Process([
+			$this->backend->getPythonBinary(), $script, $path,
+			(string)$x, (string)$y, (string)$width, (string)$height,
+		], dirname(__DIR__, 2), $env);
+		$process->setTimeout(120);
+		$process->run();
+		$this->tempManager->clean();
+		if (!$process->isSuccessful()) {
+			throw new \RuntimeException('Face detection failed: ' . trim($process->getErrorOutput()));
+		}
+		$data = json_decode(trim($process->getOutput()), true);
+		if (!is_array($data) || !isset($data['vector']) || count($data['vector']) === 0) {
+			return null;
+		}
+		return $data;
+	}
+
+	/** A local JPEG/PNG of the file: the original when readable, a large preview otherwise. */
+	private function localImagePath(File $node): string {
+		$mime = $node->getMimeType();
+		if (in_array($mime, ['image/jpeg', 'image/png', 'image/webp', 'image/bmp'], true)) {
+			$local = $node->getStorage()->getLocalFile($node->getInternalPath());
+			if (is_string($local) && is_file($local)) {
+				return $local;
+			}
+		}
+		$image = $this->preview->getPreview($node, 4096, 4096, false);
+		$tmp = $this->tempManager->getTemporaryFile('.jpg');
+		if ($tmp === false) {
+			throw new \RuntimeException('Could not create a temporary file');
+		}
+		file_put_contents($tmp, $image->getContent());
+		return $tmp;
+	}
+
+	/** @param array{0:float,1:float,2:float,3:float} $a @param array{0:float,1:float,2:float,3:float} $b */
+	private static function iou(array $a, array $b): float {
+		$x0 = max($a[0], $b[0]);
+		$y0 = max($a[1], $b[1]);
+		$x1 = min($a[0] + $a[2], $b[0] + $b[2]);
+		$y1 = min($a[1] + $a[3], $b[1] + $b[3]);
+		$inter = max(0.0, $x1 - $x0) * max(0.0, $y1 - $y0);
+		$union = $a[2] * $a[3] + $b[2] * $b[3] - $inter;
+		return $union > 0 ? $inter / $union : 0.0;
 	}
 
 	/**

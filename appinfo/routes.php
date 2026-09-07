@@ -62,6 +62,7 @@ return [
 		['name' => 'faces#findMore', 'url' => '/api/faces/{clusterId}/find', 'verb' => 'POST'],
 		// manual tagging / review (Memories "People in this photo", "Review unnamed people")
 		['name' => 'faces#fileFaces', 'url' => '/api/files/{fileId}/faces', 'verb' => 'GET'],
+		['name' => 'faces#addFace', 'url' => '/api/files/{fileId}/faces', 'verb' => 'POST'],
 		['name' => 'faces#unignoreFile', 'url' => '/api/files/{fileId}/faces/unignore', 'verb' => 'POST'],
 		['name' => 'faces#assign', 'url' => '/api/faces/detections/{detectionId}/assign', 'verb' => 'POST'],
 		['name' => 'faces#detach', 'url' => '/api/faces/detections/{detectionId}/detach', 'verb' => 'POST'],
