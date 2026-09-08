@@ -101,6 +101,31 @@ final class ClipEmbeddingMapper extends QBMapper {
 	}
 
 	/**
+	 * Packed vectors of the given files only (mood detection of a small selection).
+	 *
+	 * @param list<int> $fileIds
+	 * @return array<int, string> file id => packed vector
+	 * @throws \OCP\DB\Exception
+	 */
+	public function findVectorsByFileIds(string $model, array $fileIds): array {
+		$out = [];
+		foreach (array_chunk(array_values(array_unique(array_map('intval', $fileIds))), 500) as $chunk) {
+			$qb = $this->db->getQueryBuilder();
+			$qb->select('file_id', 'vector')
+				->from($this->getTableName())
+				->where($qb->expr()->eq('model', $qb->createPositionalParameter($model)))
+				->andWhere($qb->expr()->in('file_id', $qb->createPositionalParameter($chunk, \OCP\DB\QueryBuilder\IQueryBuilder::PARAM_INT_ARRAY)));
+			$result = $qb->executeQuery();
+			while ($row = $result->fetch()) {
+				$vector = $row['vector'];
+				$out[(int)$row['file_id']] = is_resource($vector) ? (string)stream_get_contents($vector) : (string)$vector;
+			}
+			$result->closeCursor();
+		}
+		return $out;
+	}
+
+	/**
 	 * @return array<int, string> file id => phash
 	 * @throws \OCP\DB\Exception
 	 */

@@ -53,4 +53,30 @@ final class SearchController extends Controller {
 		}
 		return new JSONResponse(['available' => true, 'results' => $out]);
 	}
+
+	/**
+	 * How well each text fits each photo (for picking the mood of a video).
+	 *
+	 * @param list<int> $fileids
+	 * @param list<string> $texts
+	 * @return JSONResponse {available: bool, scores: {textIndex: {fileid: score}}}
+	 */
+	#[NoAdminRequired]
+	public function score(array $fileids = [], array $texts = []): JSONResponse {
+		$user = $this->userSession->getUser();
+		if ($user === null) {
+			return new JSONResponse([], Http::STATUS_UNAUTHORIZED);
+		}
+		if (!$this->search->isAvailable()) {
+			return new JSONResponse(['available' => false, 'scores' => []], Http::STATUS_SERVICE_UNAVAILABLE);
+		}
+		$fileids = array_slice(array_map('intval', $fileids), 0, 500);
+		$texts = array_slice(array_map('strval', $texts), 0, 60);
+		try {
+			$scores = $this->search->scoreFiles($fileids, $texts);
+		} catch (\Throwable $e) {
+			return new JSONResponse(['available' => true, 'scores' => [], 'message' => $e->getMessage()], Http::STATUS_INTERNAL_SERVER_ERROR);
+		}
+		return new JSONResponse(['available' => true, 'scores' => $scores]);
+	}
 }

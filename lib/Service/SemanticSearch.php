@@ -96,6 +96,81 @@ final class SemanticSearch {
 	}
 
 	/**
+	 * How well each text describes each of the given photos (cosine similarity, roughly
+	 * 0.15–0.35 for a match). Used by Memories to pick the mood of a video.
+	 *
+	 * @param list<int> $fileIds
+	 * @param list<string> $texts
+	 * @return array<int, array<int, float>> text index => (file id => score)
+	 * @throws \RuntimeException|\OCP\DB\Exception
+	 */
+	public function scoreFiles(array $fileIds, array $texts): array {
+		$queries = $this->embedTexts($texts);
+		$vectors = $this->embeddings->findVectorsByFileIds($this->clipModel->getModelName(), $fileIds);
+		$out = [];
+		foreach ($queries as $t => $query) {
+			$dimensions = count($query);
+			$out[$t] = [];
+			foreach ($vectors as $fileId => $packed) {
+				$vector = unpack('g*', $packed);
+				if ($vector === false || count($vector) !== $dimensions) {
+					continue;
+				}
+				$dot = 0.0;
+				$i = 1;
+				foreach ($query as $q) {
+					$dot += $q * $vector[$i++];
+				}
+				$out[$t][$fileId] = $dot;
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * Several texts in one process (the model loads once); cached like embedText().
+	 *
+	 * @param list<string> $texts
+	 * @return list<list<float>>
+	 * @throws \RuntimeException
+	 */
+	public function embedTexts(array $texts): array {
+		$cache = $this->cacheFactory->createDistributed('recognize_clip_text');
+		$out = [];
+		$missing = [];
+		foreach ($texts as $i => $text) {
+			$key = md5($this->clipModel->getModelName() . "\0" . mb_strtolower(trim($text)));
+			$cached = $cache->get($key);
+			if (is_array($cached) && count($cached) > 0) {
+				$out[$i] = $cached;
+			} else {
+				$missing[$i] = trim($text);
+			}
+		}
+		if (count($missing) > 0) {
+			$proc = new Process(array_merge([$this->clipModel->getPythonBinary(), dirname(__DIR__, 2) . '/src/clip_text.py'], array_values($missing)), dirname(__DIR__, 2), $this->clipModel->getEnvironment());
+			$proc->setTimeout(180);
+			$proc->run();
+			if ($proc->getExitCode() !== 0) {
+				throw new \RuntimeException('Text embedding failed: ' . mb_substr($proc->getErrorOutput(), -500));
+			}
+			$lines = array_values(array_filter(explode("\n", trim($proc->getOutput()))));
+			$j = 0;
+			foreach ($missing as $i => $text) {
+				$vector = json_decode($lines[$j++] ?? '', true);
+				if (!is_array($vector) || count($vector) === 0) {
+					throw new \RuntimeException('Text embedding returned no vector for "' . $text . '"');
+				}
+				$vector = array_map('floatval', $vector);
+				$cache->set(md5($this->clipModel->getModelName() . "\0" . mb_strtolower($text)), $vector, self::TEXT_CACHE_TTL);
+				$out[$i] = $vector;
+			}
+		}
+		ksort($out);
+		return $out;
+	}
+
+	/**
 	 * @return list<float>
 	 * @throws \RuntimeException
 	 */
