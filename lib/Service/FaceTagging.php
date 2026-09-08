@@ -128,21 +128,50 @@ final class FaceTagging {
 			$this->backend->getInsightfaceEnvironment(),
 			['TMPDIR' => (string)$this->tempManager->getTempBaseDir()],
 		);
-		$process = new Process([
-			$this->backend->getPythonBinary(), $script, $path,
-			(string)$x, (string)$y, (string)$width, (string)$height,
-		], dirname(__DIR__, 2), $env);
-		$process->setTimeout(120);
-		$process->run();
+		// The web server process usually cannot open /dev/nvidia* (systemd PrivateDevices), and one
+		// crop is fast on the CPU anyway: only ask for the GPU when this process can actually use it.
+		if (!self::gpuUsable()) {
+			$env['RECOGNIZE_GPU'] = 'false';
+		}
+
+		$run = function (array $env) use ($script, $path, $x, $y, $width, $height): Process {
+			$process = new Process([
+				$this->backend->getPythonBinary(), $script, $path,
+				(string)$x, (string)$y, (string)$width, (string)$height,
+			], dirname(__DIR__, 2), $env);
+			$process->setTimeout(180);
+			$process->run();
+			return $process;
+		};
+
+		$process = $run($env);
+		if (!$process->isSuccessful() && ($env['RECOGNIZE_GPU'] ?? '') === 'true') {
+			// GPU refused the job (driver, memory, permissions): the CPU always works
+			$this->logger->warning('Face detection on the GPU failed, retrying on the CPU: ' . trim($process->getErrorOutput()));
+			$env['RECOGNIZE_GPU'] = 'false';
+			$process = $run($env);
+		}
 		$this->tempManager->clean();
 		if (!$process->isSuccessful()) {
-			throw new \RuntimeException('Face detection failed: ' . trim($process->getErrorOutput()));
+			$error = trim($process->getErrorOutput());
+			$lines = array_slice(array_filter(explode("\n", $error)), -2);
+			throw new \RuntimeException('Face detection failed: ' . implode(' | ', $lines));
 		}
 		$data = json_decode(trim($process->getOutput()), true);
 		if (!is_array($data) || !isset($data['vector']) || count($data['vector']) === 0) {
 			return null;
 		}
 		return $data;
+	}
+
+	/** Can this process talk to the NVIDIA driver? (the web worker usually cannot) */
+	private static function gpuUsable(): bool {
+		foreach (['/dev/nvidiactl', '/dev/nvidia0'] as $device) {
+			if (!@is_readable($device)) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/** A local JPEG/PNG of the file: the original when readable, a large preview otherwise. */

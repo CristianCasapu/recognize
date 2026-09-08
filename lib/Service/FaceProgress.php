@@ -76,7 +76,7 @@ final class FaceProgress {
 			'queued' => $this->countQueued(),
 			'faces' => $this->countDetections(),
 			'photosWithFaces' => $photosWithFaces,
-			'waitingForClustering' => $this->countWithClusterId(null),
+			'waitingForClustering' => $this->detections->countUnclustered(), // faces big enough to be clustered, like occ recognize:status
 			'unassigned' => $this->countWithClusterId(-1),
 			'clusters' => $this->countClusters(false),
 			'named' => $this->countClusters(true),
