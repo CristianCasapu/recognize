@@ -29,6 +29,9 @@ import numpy as np  # noqa: E402
 import onnxruntime  # noqa: E402
 from insightface.app import FaceAnalysis  # noqa: E402
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from face_quality import face_metrics  # noqa: E402
+
 TILING = os.environ.get('RECOGNIZE_FACES_TILING') == 'true'
 TILE_GRID = 2
 TILE_OVERLAP = 0.2
@@ -120,7 +123,10 @@ def main():
                 faces = detect_faces(app, img)
             for face in faces:
                 x, y, w, h = face['box']
+                metrics = face_metrics(img, x / width, y / height, w / width, h / height)
                 out.append({
+                    'sharpness': metrics[0] if metrics else None,
+                    'brightness': metrics[1] if metrics else None,
                     'angle': face['angle'],
                     'vector': face['vector'],
                     'x': x / width,

@@ -29,6 +29,18 @@ use OCP\AppFramework\Db\Entity;
  * @method int|null getClusterId()
  * @method float getThreshold()
  * @method setThreshold(float $threshold)
+ * @method float|null getScore()
+ * @method setScore(float|null $score)
+ * @method float|null getYaw()
+ * @method setYaw(float|null $yaw)
+ * @method float|null getPitch()
+ * @method setPitch(float|null $pitch)
+ * @method float|null getSharpness()
+ * @method setSharpness(float|null $sharpness)
+ * @method float|null getBrightness()
+ * @method setBrightness(float|null $brightness)
+ * @method float|null getQuality()
+ * @method setQuality(float|null $quality)
  */
 class FaceDetection extends Entity {
 	protected $fileId;
@@ -40,14 +52,20 @@ class FaceDetection extends Entity {
 	protected $faceVector;
 	protected $clusterId;
 	protected $threshold;
+	protected $score;
+	protected $yaw;
+	protected $pitch;
+	protected $sharpness;
+	protected $brightness;
+	protected $quality;
 	/**
 	 * @var string[]
 	 */
-	public static $columns = ['id', 'user_id', 'file_id', 'x', 'y', 'height', 'width', 'face_vector', 'cluster_id', 'threshold'];
+	public static $columns = ['id', 'user_id', 'file_id', 'x', 'y', 'height', 'width', 'face_vector', 'cluster_id', 'threshold', 'score', 'yaw', 'pitch', 'sharpness', 'brightness', 'quality'];
 	/**
 	 * @var string[]
 	 */
-	public static $fields = ['id', 'userId', 'fileId', 'x', 'y', 'height', 'width', 'faceVector', 'clusterId', 'threshold'];
+	public static $fields = ['id', 'userId', 'fileId', 'x', 'y', 'height', 'width', 'faceVector', 'clusterId', 'threshold', 'score', 'yaw', 'pitch', 'sharpness', 'brightness', 'quality'];
 
 	public function __construct() {
 		// add types in constructor
@@ -60,6 +78,9 @@ class FaceDetection extends Entity {
 		$this->addType('faceVector', 'json');
 		$this->addType('clusterId', 'integer');
 		$this->addType('threshold', 'float');
+		foreach (['score', 'yaw', 'pitch', 'sharpness', 'brightness', 'quality'] as $field) {
+			$this->addType($field, 'float');
+		}
 	}
 
 	public function toArray(): array {

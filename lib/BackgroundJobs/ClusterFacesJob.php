@@ -65,6 +65,8 @@ final class ClusterFacesJob extends QueuedJob {
 			\OCP\Server::get(FaceTracker::class)->track($userId);
 			// After a backend switch: hand the saved person names to the matching new clusters
 			$this->nameSnapshot->restorePending();
+			// Faces without a prominence score (older detections) get one in the background
+			FaceQualityJob::scheduleIfNeeded($this->jobList, \OCP\Server::get(\OCA\Recognize\Service\FaceQuality::class));
 			// Chain: one run handles one batch — re-queue ourselves until the backlog is gone
 			$remaining = \OCP\Server::get(\OCA\Recognize\Db\FaceDetectionMapper::class)->countUnclusteredForUser($userId);
 			if ($remaining > 0) {

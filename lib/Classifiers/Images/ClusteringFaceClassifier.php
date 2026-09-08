@@ -223,6 +223,8 @@ final class ClusteringFaceClassifier extends Classifier {
 					$faceDetection->setVector($face['vector']);
 					$faceDetection->setFileId($queueFile->getFileId());
 					$faceDetection->setUserId($userId);
+					// prominence of the face in the photo (Memories "best photos first")
+					\OCP\Server::get(\OCA\Recognize\Service\FaceQuality::class)->applyDetectorResult($faceDetection, $face);
 					try {
 						$this->faceDetections->insert($faceDetection);
 					} catch (\Throwable $e) {

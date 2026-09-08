@@ -111,6 +111,8 @@ final class Status extends Command {
 		$unclustered = $this->faceDetections->countUnclustered();
 		$rejected = $this->countRows('recognize_face_detections', 'cluster_id = -1');
 		$output->writeln('  detected faces: ' . $detections . ' in ' . $this->countDistinctFiles() . ' photos; waiting for clustering: ' . $unclustered . '; not assignable to anyone yet: ' . $rejected);
+		$unscored = $this->countRows('recognize_face_detections', 'quality IS NULL');
+		$output->writeln('  prominence scores (Memories "best photos first"): ' . ($detections - $unscored) . ' of ' . $detections . ' faces' . ($unscored > 0 ? ' — ' . $unscored . ' still to score (occ recognize:face-quality, or automatically after clustering)' : ''));
 		$clusters = $this->countRows('recognize_face_clusters');
 		$named = $this->countRows('recognize_face_clusters', "title <> ''");
 		$clusterStatus = $this->settingsService->getSetting('clusterFaces.status');

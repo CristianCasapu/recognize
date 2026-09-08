@@ -456,6 +456,30 @@ final class FaceDetectionMapper extends QBMapper {
 		}
 	}
 
+	/** Faces that have no prominence score yet (see Service\FaceQuality) */
+	public function countMissingQuality(): int {
+		$qb = $this->db->getQueryBuilder();
+		$qb->select($qb->func()->count('id'))
+			->from('recognize_face_detections')
+			->where($qb->expr()->isNull('quality'));
+		return (int)$qb->executeQuery()->fetchOne();
+	}
+
+	/**
+	 * Files having faces without a prominence score
+	 *
+	 * @return list<int>
+	 */
+	public function findFileIdsMissingQuality(int $limit): array {
+		$qb = $this->db->getQueryBuilder();
+		$qb->selectDistinct('file_id')
+			->from('recognize_face_detections')
+			->where($qb->expr()->isNull('quality'))
+			->orderBy('file_id', 'DESC')
+			->setMaxResults($limit);
+		return array_map('intval', $qb->executeQuery()->fetchAll(\PDO::FETCH_COLUMN));
+	}
+
 	public function countUnclustered(): int {
 		$qb = $this->db->getQueryBuilder();
 		$qb->select($qb->func()->count('id'))
