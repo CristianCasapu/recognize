@@ -237,6 +237,13 @@ final class ClusteringFaceClassifier extends Classifier {
 				$this->config->setAppValueString(self::MODEL_NAME . '.status', 'true', lazy: true);
 				$this->config->setAppValueString(self::MODEL_NAME . '.lastFile', (string)time(), lazy: true);
 			}
+			// the faces of this photo are all in: weigh them against one another, so that the
+			// people the picture was taken of are told apart from the ones in the background
+			try {
+				\OCP\Server::get(\OCA\Recognize\Service\FaceQuality::class)->rescoreSubjects($queueFile->getFileId());
+			} catch (\Throwable $e) {
+				$this->logger->debug('Could not weigh the faces of file ' . $queueFile->getFileId() . ': ' . $e->getMessage());
+			}
 		}
 		$this->logger->debug('face classifier end');
 	}

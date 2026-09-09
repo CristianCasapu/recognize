@@ -480,6 +480,44 @@ final class FaceDetectionMapper extends QBMapper {
 		return array_map('intval', $qb->executeQuery()->fetchAll(\PDO::FETCH_COLUMN));
 	}
 
+	public function countMissingSubject(): int {
+		$qb = $this->db->getQueryBuilder();
+		$qb->select($qb->func()->count('id'))
+			->from('recognize_face_detections')
+			->where($qb->expr()->isNull('subject'));
+		return (int)$qb->executeQuery()->fetchOne();
+	}
+
+	/**
+	 * Files whose faces were never weighed against one another (subject / surroundings)
+	 *
+	 * @return list<int>
+	 */
+	public function findFileIdsMissingSubject(int $limit): array {
+		$qb = $this->db->getQueryBuilder();
+		$qb->selectDistinct('file_id')
+			->from('recognize_face_detections')
+			->where($qb->expr()->isNull('subject'))
+			->orderBy('file_id', 'DESC')
+			->setMaxResults($limit);
+		return array_map('intval', $qb->executeQuery()->fetchAll(\PDO::FETCH_COLUMN));
+	}
+
+	/**
+	 * Every file that has at least one face, oldest first (for a full recount)
+	 *
+	 * @return list<int>
+	 */
+	public function findFileIdsWithFaces(int $limit, int $afterFileId = 0): array {
+		$qb = $this->db->getQueryBuilder();
+		$qb->selectDistinct('file_id')
+			->from('recognize_face_detections')
+			->where($qb->expr()->gt('file_id', $qb->createPositionalParameter($afterFileId, \OCP\DB\QueryBuilder\IQueryBuilder::PARAM_INT)))
+			->orderBy('file_id', 'ASC')
+			->setMaxResults($limit);
+		return array_map('intval', $qb->executeQuery()->fetchAll(\PDO::FETCH_COLUMN));
+	}
+
 	public function countUnclustered(): int {
 		$qb = $this->db->getQueryBuilder();
 		$qb->select($qb->func()->count('id'))

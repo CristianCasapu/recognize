@@ -36,6 +36,16 @@ final class FaceQuality {
 	public const WEIGHTS = ['size' => 0.40, 'sharpness' => 0.20, 'brightness' => 0.12, 'pose' => 0.13, 'centrality' => 0.10, 'detector' => 0.05];
 	private const PREVIEW = 1024;
 
+	/**
+	 * A face this big (side, relative to the image) is in front whatever else is in the picture.
+	 * It is also the yardstick when a photo has only small faces: then even the biggest of them
+	 * is not a subject, which is what makes a lone person far away count as surroundings.
+	 */
+	public const SUBJECT_SIZE = 0.12;
+
+	/** The same for sharpness: in a picture where nothing is sharp, nobody is the subject. */
+	public const SUBJECT_SHARPNESS = 0.45;
+
 	public function __construct(
 		private FaceDetectionMapper $detections,
 		private IRootFolder $rootFolder,
@@ -89,6 +99,116 @@ final class FaceQuality {
 			return 1.0;
 		}
 		return max(0.5, 1.0 - ($mean - 0.8) / 0.4);
+	}
+
+	/**
+	 * Is this face what the picture is about, or is it part of the surroundings?
+	 *
+	 * A photograph is normally taken of the people in front of the lens: they are big in the
+	 * frame and they are where the lens was focused. Everybody else — further back, smaller,
+	 * softer because they are outside the depth of field — is scenery.
+	 *
+	 * Both things are measured against the other faces of the same photo, because sharpness
+	 * and size mean nothing on their own (a phone photo and a photo from a big lens do not
+	 * compare), with an absolute floor so that a picture in which every face is small or every
+	 * face is blurred has no subject at all:
+	 *
+	 *   foreground = size  / max(biggest face,  SUBJECT_SIZE)
+	 *   focus      = sharp / max(sharpest face, SUBJECT_SHARPNESS)
+	 *   subject    = sqrt(foreground · focus)     both have to hold; one alone is not enough
+	 *
+	 * @param list<FaceDetection> $detections every face of ONE photo
+	 *
+	 * @return array<int, float> detection id => subject, and the value is set on the entities
+	 */
+	public function subjects(array $detections): array {
+		if (count($detections) === 0) {
+			return [];
+		}
+
+		$sizes = [];
+		$sharpnesses = [];
+		foreach ($detections as $detection) {
+			$sizes[] = sqrt(max(0.0, (float)$detection->getWidth() * (float)$detection->getHeight()));
+			if ($detection->getSharpness() !== null) {
+				$sharpnesses[] = max(0.0, min(1.0, (float)$detection->getSharpness()));
+			}
+		}
+		$sizeRef = max(self::SUBJECT_SIZE, max($sizes));
+		// no face of this photo was ever measured: judge by size alone rather than guess
+		$sharpRef = count($sharpnesses) > 0 ? max(self::SUBJECT_SHARPNESS, max($sharpnesses)) : null;
+
+		$out = [];
+		foreach ($detections as $i => $detection) {
+			$foreground = min(1.0, $sizes[$i] / $sizeRef);
+			$focus = 1.0;
+			if ($sharpRef !== null) {
+				$sharpness = $detection->getSharpness();
+				// a face of this photo that was never measured keeps the benefit of the doubt
+				$focus = $sharpness === null ? 1.0 : min(1.0, max(0.0, (float)$sharpness) / $sharpRef);
+			}
+			$subject = round(sqrt($foreground * $focus), 4);
+			$detection->setSubject($subject);
+			$out[(int)$detection->getId()] = $subject;
+		}
+
+		return $out;
+	}
+
+	/** The line between a person the picture is about and the surroundings (faces.subjectThreshold). */
+	public function subjectThreshold(): float {
+		$value = (float)$this->settings->getSetting('faces.subjectThreshold');
+
+		return $value > 0.0 && $value <= 1.0 ? $value : 0.55;
+	}
+
+	/**
+	 * Weigh the faces of one photo against one another again, from what is already stored
+	 * (no picture is read). Used after new faces were found in a file and by the command.
+	 *
+	 * @return int how many faces were weighed
+	 */
+	public function rescoreSubjects(int $fileId): int {
+		$detections = $this->detections->findByFileId($fileId);
+		if (count($detections) === 0) {
+			return 0;
+		}
+		$this->subjects($detections);
+		foreach ($detections as $detection) {
+			$this->detections->update($detection);
+		}
+
+		return count($detections);
+	}
+
+	public function countMissingSubject(): int {
+		return $this->detections->countMissingSubject();
+	}
+
+	/**
+	 * Weigh the faces of files that were never weighed (or of every file, with $all).
+	 *
+	 * @param callable(int $files, int $faces):void|null $progress
+	 *
+	 * @return array{files:int, faces:int, remaining:int, lastFileId:int}
+	 */
+	public function backfillSubjects(int $fileLimit = 500, bool $all = false, int $afterFileId = 0, ?callable $progress = null): array {
+		$fileIds = $all
+			? $this->detections->findFileIdsWithFaces($fileLimit, $afterFileId)
+			: $this->detections->findFileIdsMissingSubject($fileLimit);
+		$files = 0;
+		$faces = 0;
+		$last = $afterFileId;
+		foreach ($fileIds as $fileId) {
+			$faces += $this->rescoreSubjects($fileId);
+			$last = $fileId;
+			$files++;
+			if ($progress !== null) {
+				$progress($files, $faces);
+			}
+		}
+
+		return ['files' => $files, 'faces' => $faces, 'remaining' => $this->countMissingSubject(), 'lastFileId' => $last];
 	}
 
 	/** Fill every quality-related column of a detection that the classifier just produced */
@@ -167,6 +287,8 @@ final class FaceQuality {
 				$this->storeComposite($detection);
 				$faces++;
 			}
+			// subject or surroundings: every face of the photo, not only the ones just measured
+			$this->rescoreSubjects((int)$fileId);
 			$files++;
 			if ($progress !== null) {
 				$progress($files, $faces);
@@ -246,6 +368,8 @@ final class FaceQuality {
 			}
 			$this->storeComposite($detection);
 		}
+		$this->rescoreSubjects($fileId);
+
 		return count($detections);
 	}
 

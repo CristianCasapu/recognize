@@ -201,6 +201,20 @@ occ recognize:switch-face-backend insightface</code></pre>
 					@update:value="onChange" />
 			</p>
 			<p>&nbsp;</p>
+			<h3>{{ t('recognize', 'Who the picture is about') }}</h3>
+			<p>{{ t('recognize', 'A photograph is normally taken of the people in front of the camera: they are large in the frame and they are where the lens focused. Whoever stands further back — smaller and softer, outside the depth of field — belongs to the surroundings. Every face is therefore weighed against the other faces of the same photo and gets a "subject" score between 0 and 1; faces at or above the threshold count as the people the picture is about. Nothing is skipped when scanning: every face is still detected and clustered. Run "occ recognize:face-subjects" once after changing anything measured, or "occ recognize:face-subjects --all" to weigh every photo again.') }}</p>
+			<p>
+				<NcTextField :disabled="!settings['faces.enabled']"
+					:value.sync="settings['faces.subjectThreshold']"
+					type="number"
+					:min="0"
+					:max="1"
+					:step="0.05"
+					:label-visible="true"
+					:label="t('recognize', 'From this score a face is one of the people the picture is about (default 0.55)')"
+					@update:value="onChange" />
+			</p>
+			<p>&nbsp;</p>
 			<h3>{{ t('recognize', 'Automatic merging of clusters') }}</h3>
 			<p>{{ t('recognize', 'Clustering runs in batches and never merges two existing clusters, so the same person often ends up as one named and several unnamed clusters. When a threshold above 0 is set, unnamed clusters whose average face is closer than the threshold to a named cluster (and clearly farther from every other named cluster) are merged into it after every clustering run. Clusters that appear together in the same photo are never merged (a person cannot be in a photo twice). Typical thresholds: 0.4 for face-api, 0.85 for InsightFace. Use "Preview" to see what would be merged with the current threshold before enabling it.') }}</p>
 			<p>
@@ -775,7 +789,7 @@ import { generateUrl } from '@nextcloud/router'
 import { loadState } from '@nextcloud/initial-state'
 import humanizeDuration from 'humanize-duration'
 
-const SETTINGS = ['tensorflow.cores', 'tensorflow.gpu', 'tensorflow.purejs', 'tensorflow.ldLibraryPath', 'python_binary', 'imagenet.enabled', 'landmarks.enabled', 'faces.enabled', 'musicnn.enabled', 'movinet.enabled', 'node_binary', 'ffmpeg_binary', 'faces.status', 'imagenet.status', 'landmarks.status', 'movinet.status', 'musicnn.status', 'faces.lastFile', 'imagenet.lastFile', 'landmarks.lastFile', 'movinet.lastFile', 'musicnn.lastFile', 'faces.batchSize', 'imagenet.batchSize', 'landmarks.batchSize', 'movinet.batchSize', 'musicnn.batchSize', 'faces.previewDimension', 'faces.tiling', 'faces.minDetectionSize', 'faces.autoMergeThreshold', 'clusterFaces.status', 'clusterFaces.lastRun', 'nice_binary', 'nice_value', 'concurrency.enabled', 'notifications.enabled', 'forkUpdates.auto', 'faces.autoInstallInsightface', 'clip.enabled', 'clip.status', 'clip.lastFile', 'clip.batchSize', 'clip.model', 'clip.minScore']
+const SETTINGS = ['tensorflow.cores', 'tensorflow.gpu', 'tensorflow.purejs', 'tensorflow.ldLibraryPath', 'python_binary', 'imagenet.enabled', 'landmarks.enabled', 'faces.enabled', 'musicnn.enabled', 'movinet.enabled', 'node_binary', 'ffmpeg_binary', 'faces.status', 'imagenet.status', 'landmarks.status', 'movinet.status', 'musicnn.status', 'faces.lastFile', 'imagenet.lastFile', 'landmarks.lastFile', 'movinet.lastFile', 'musicnn.lastFile', 'faces.batchSize', 'imagenet.batchSize', 'landmarks.batchSize', 'movinet.batchSize', 'musicnn.batchSize', 'faces.previewDimension', 'faces.tiling', 'faces.minDetectionSize', 'faces.autoMergeThreshold', 'faces.subjectThreshold', 'clusterFaces.status', 'clusterFaces.lastRun', 'nice_binary', 'nice_value', 'concurrency.enabled', 'notifications.enabled', 'forkUpdates.auto', 'faces.autoInstallInsightface', 'clip.enabled', 'clip.status', 'clip.lastFile', 'clip.batchSize', 'clip.model', 'clip.minScore']
 
 const BOOLEAN_SETTINGS = ['tensorflow.gpu', 'tensorflow.purejs', 'imagenet.enabled', 'landmarks.enabled', 'faces.enabled', 'musicnn.enabled', 'movinet.enabled', 'faces.status', 'imagenet.status', 'landmarks.status', 'movinet.status', 'musicnn.status', 'faces.lastFile', 'imagenet.lastFile', 'landmarks.lastFile', 'movinet.lastFile', 'musicnn.lastFile', 'clusterFaces.status', 'concurrency.enabled', 'faces.tiling', 'notifications.enabled', 'forkUpdates.auto', 'faces.autoInstallInsightface', 'clip.enabled', 'clip.status', 'clip.lastFile']
 

@@ -75,7 +75,7 @@ Requirements:
 The app does not send any sensitive data to cloud providers or similar services. All processing is done on your Nextcloud machine, using Tensorflow.js running in Node.js.
 
 ]]></description>
-	<version>12.8.0</version>
+	<version>12.9.0</version>
 	<licence>agpl</licence>
 	<author mail="mklehr@gmx.net">Marcel Klehr</author>
 	<types>
@@ -134,6 +134,7 @@ The app does not send any sensitive data to cloud providers or similar services.
 		<command>OCA\Recognize\Command\InstallClip</command>
 		<command>OCA\Recognize\Command\TrackFaces</command>
 		<command>OCA\Recognize\Command\FaceQuality</command>
+		<command>OCA\Recognize\Command\FaceSubjects</command>
 	</commands>
 
 	<settings>

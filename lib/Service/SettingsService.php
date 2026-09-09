@@ -63,6 +63,9 @@ final class SettingsService {
 		'faces.minDetectionSize' => '0.03',
 		// Merge unnamed clusters into a named one when their centroids are closer than this (0 = off)
 		'faces.autoMergeThreshold' => '0',
+		// From which "subject" score a face counts as one of the people the picture is about
+		// rather than as part of the surroundings (see Service\FaceQuality::subjects)
+		'faces.subjectThreshold' => '0.55',
 		// Extra library path for the Node.js classifier processes (e.g. where CUDA/cuDNN live)
 		'tensorflow.ldLibraryPath' => '',
 		// Notify admins via Nextcloud notifications when jobs fail
@@ -127,6 +130,7 @@ final class SettingsService {
 		'faces.tiling',
 		'faces.minDetectionSize',
 		'faces.autoMergeThreshold',
+		'faces.subjectThreshold',
 		'tensorflow.ldLibraryPath',
 		'notifications.enabled',
 		'python_binary',

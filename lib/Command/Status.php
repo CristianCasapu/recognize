@@ -113,6 +113,16 @@ final class Status extends Command {
 		$output->writeln('  detected faces: ' . $detections . ' in ' . $this->countDistinctFiles() . ' photos; waiting for clustering: ' . $unclustered . '; not assignable to anyone yet: ' . $rejected);
 		$unscored = $this->countRows('recognize_face_detections', 'quality IS NULL');
 		$output->writeln('  prominence scores (Memories "best photos first"): ' . ($detections - $unscored) . ' of ' . $detections . ' faces' . ($unscored > 0 ? ' — ' . $unscored . ' still to score (occ recognize:face-quality, or automatically after clustering)' : ''));
+		$unweighed = $this->countRows('recognize_face_detections', 'subject IS NULL');
+		$threshold = \OCP\Server::get(\OCA\Recognize\Service\FaceQuality::class)->subjectThreshold();
+		$subjects = $this->countRows('recognize_face_detections', 'subject >= ' . $threshold);
+		$output->writeln(sprintf(
+			'  people the picture is about: %d of %d faces score %.2f or more%s',
+			$subjects,
+			$detections - $unweighed,
+			$threshold,
+			$unweighed > 0 ? ' — ' . $unweighed . ' faces never weighed (occ recognize:face-subjects)' : '',
+		));
 		$clusters = $this->countRows('recognize_face_clusters');
 		$named = $this->countRows('recognize_face_clusters', "title <> ''");
 		$clusterStatus = $this->settingsService->getSetting('clusterFaces.status');

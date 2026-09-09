@@ -41,6 +41,8 @@ use OCP\AppFramework\Db\Entity;
  * @method setBrightness(float|null $brightness)
  * @method float|null getQuality()
  * @method setQuality(float|null $quality)
+ * @method float|null getSubject()
+ * @method setSubject(float|null $subject)
  */
 class FaceDetection extends Entity {
 	protected $fileId;
@@ -58,14 +60,15 @@ class FaceDetection extends Entity {
 	protected $sharpness;
 	protected $brightness;
 	protected $quality;
+	protected $subject;
 	/**
 	 * @var string[]
 	 */
-	public static $columns = ['id', 'user_id', 'file_id', 'x', 'y', 'height', 'width', 'face_vector', 'cluster_id', 'threshold', 'score', 'yaw', 'pitch', 'sharpness', 'brightness', 'quality'];
+	public static $columns = ['id', 'user_id', 'file_id', 'x', 'y', 'height', 'width', 'face_vector', 'cluster_id', 'threshold', 'score', 'yaw', 'pitch', 'sharpness', 'brightness', 'quality', 'subject'];
 	/**
 	 * @var string[]
 	 */
-	public static $fields = ['id', 'userId', 'fileId', 'x', 'y', 'height', 'width', 'faceVector', 'clusterId', 'threshold', 'score', 'yaw', 'pitch', 'sharpness', 'brightness', 'quality'];
+	public static $fields = ['id', 'userId', 'fileId', 'x', 'y', 'height', 'width', 'faceVector', 'clusterId', 'threshold', 'score', 'yaw', 'pitch', 'sharpness', 'brightness', 'quality', 'subject'];
 
 	public function __construct() {
 		// add types in constructor
@@ -78,7 +81,7 @@ class FaceDetection extends Entity {
 		$this->addType('faceVector', 'json');
 		$this->addType('clusterId', 'integer');
 		$this->addType('threshold', 'float');
-		foreach (['score', 'yaw', 'pitch', 'sharpness', 'brightness', 'quality'] as $field) {
+		foreach (['score', 'yaw', 'pitch', 'sharpness', 'brightness', 'quality', 'subject'] as $field) {
 			$this->addType($field, 'float');
 		}
 	}
